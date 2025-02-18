@@ -228,18 +228,19 @@ function start_image_viewer(stack_paths)
             % display_warning(num2str(k));
             baseFileName = img_data.img_files(k).name;
             fullFileName = fullfile(img_data.img_files(k).folder, baseFileName);
-            bwImage = imread(fullFileName);
+            bwImageGPU = gpuArray(imread(fullFileName));
+            templateGPU = gpuArray(template); % Convert the template to a GPU array
             % Extract the region of interest (ROI) with `n` pixel padding
             x1 = max(1, round(templatePosition(1)) - searchWindow); % X start
             y1 = max(1, round(templatePosition(2)) - searchWindow); % Y start
-            x2 = min(size(bwImage, 2), round(templatePosition(1) + templatePosition(3)) + searchWindow);
-            y2 = min(size(bwImage, 1), round(templatePosition(2) + templatePosition(4)) + searchWindow);
+            x2 = min(size(bwImageGPU, 2), round(templatePosition(1) + templatePosition(3)) + searchWindow);
+            y2 = min(size(bwImageGPU, 1), round(templatePosition(2) + templatePosition(4)) + searchWindow);
 
             % Crop the padded region
-            croppedImage = bwImage(y1:y2, x1:x2);
+            croppedImageGPU = bwImageGPU(y1:y2, x1:x2);
             % find the template in the image
-            c = normxcorr2(template, croppedImage);
-            [ypeak, xpeak] = find(c==max(c(:)));
+            c = normxcorr2(templateGPU, croppedImageGPU);
+            [ypeak, xpeak] = find(gather(c) == max(c(:)));
             yoffSet = ypeak-size(template,1);
             xoffSet = xpeak-size(template,2);
             displacements(k, :) = [xoffSet, yoffSet];
@@ -278,7 +279,7 @@ function start_image_viewer(stack_paths)
             stack_info.img_data.imgs{k} = mat2gray(imread(fullfile(stack_info.img_data.img_files(k).folder, stack_info.img_data.img_files(k).name)));
         end
         % if aligned displacements exist, apply them to the image
-        if exist('displacements', 'var')
+        if stack_info.aligned == true
             displaced_img = imtranslate(stack_info.img_data.imgs{k}, -stack_info.displacements(k, :));
             imshow(displaced_img, 'Parent', ax1);
         else
@@ -428,11 +429,44 @@ function start_image_viewer(stack_paths)
         for i = 1:length(stack_paths)
             set(stack_dropdown, 'Value', i);
             load_images_callback();
-            if exist(sprintf('%s//displacements_%s.mat', parentDir, iteration), 'file')
-                logs{end+1} = sprintf("%s Trial %s already aligned",parentDir, iteration);
+            if stack_info.aligned == true
+                logs{end+1} = sprintf("Trial %s already aligned",stack_paths(i));
                 continue;
             end
             align_stack_callback('mode', 'auto');
+        end
+    end
+    
+    % Create play/pause button beside the scrollbar
+    play_icon = imread('./play.png');
+    play_icon = imresize(play_icon, [40, 40]);
+    pause_icon = imread('./pause.png');
+    pause_icon = imresize(pause_icon, [40, 40]);
+    play_pause_button = uicontrol(axesPanel, 'Style', 'pushbutton', 'Units', 'normalized', ...
+        'Position', [0.01 0.06 0.08 0.08], 'CData', play_icon, 'Callback', @play_pause_callback);
+    is_playing = false;
+    play_timer = timer('ExecutionMode', 'fixedRate', 'Period', 0.08, 'TimerFcn', @play_timer_callback);
+
+    function play_pause_callback(~, ~)
+        if is_playing
+            stop(play_timer);
+            set(play_pause_button, 'CData', play_icon);
+        else
+            start(play_timer);
+            set(play_pause_button, 'CData', pause_icon);
+        end
+        is_playing = ~is_playing;
+    end
+
+    function play_timer_callback(~, ~)
+        current_value = get(slider, 'Value');
+        if current_value < get(slider, 'Max')
+            set(slider, 'Value', current_value + 1);
+            slider_callback(slider);
+        else
+            stop(play_timer);
+            set(play_pause_button, 'CData', play_icon);
+            is_playing = false;
         end
     end
 end
