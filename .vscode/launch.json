@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run MATLAB Script",
+            "request": "launch",
+            "program": "matlab",
+            "args": [
+                "-nosplash",
+                "-nodesktop",
+                "-r",
+                "run('path_to_your_script.m');"
+            ],
+            "windows": {
+                "program": "C:\\Program Files\\MATLAB\\R2021a\\bin\\matlab.exe"
+            }
+        }
+    ]
+}

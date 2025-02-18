@@ -1,0 +1,27 @@
+{
+    "cSpell.words": [
+        "assignin",
+        "disp",
+        "drawrectangle",
+        "fullfile",
+        "imcrop",
+        "imgs",
+        "imread",
+        "imresize",
+        "imtranslate",
+        "keypress",
+        "nargin",
+        "normxcorr",
+        "numel",
+        "parfor",
+        "sprintf",
+        "uicontrol",
+        "uiwait",
+        "waitbar",
+        "warndlg",
+        "xoff",
+        "xpeak",
+        "yoff",
+        "ypeak"
+    ]
+}
