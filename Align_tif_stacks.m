@@ -102,7 +102,7 @@ function start_image_viewer(stack_paths)
             dustbin = imread('./bin_icon.png');
             dustbin = imresize(dustbin, [20, 20]);
             uicontrol(parent, 'Style', 'pushbutton', 'Units', 'normalized', ...
-                'Position', [position(1)+0.5 position(2) 0.08 0.05], 'CData', dustbin, ...
+                'Position', [position(1) + 0.5 position(2) 0.08 0.05], 'CData', dustbin, ...
                 'Callback', delete_callback);
         end
     end
@@ -307,7 +307,6 @@ function start_image_viewer(stack_paths)
         toggle_indicator(shortened_indicator, true);
         % save the start and end indices in a stack_info.mat file
         save_stack_callback();
-
     end
     function shorten_slider(start_index, end_index)
         % display_warning(sprintf("Shortening stack from %d to %d", start_index, end_index));
@@ -344,6 +343,7 @@ function start_image_viewer(stack_paths)
     end
     function scrollWheelMoved(~, event)
         persistent last_scroll_time;  % will retain its value between calls
+        now = datetime('now');
         if isempty(last_scroll_time)
             last_scroll_time = now;  % initialize to the current time
         end
@@ -375,7 +375,7 @@ function start_image_viewer(stack_paths)
         keypressed = 0;  % UserData is 0 before key press
         set(f, 'KeyPressFcn', @myKeyPressFcn)
 
-        function myKeyPressFcn(src, event)
+        function myKeyPressFcn(~, event)
             if strcmp(event.Key, key_to_wait_for)
                 keypressed = 1;  % Set UserData to 1 after key press
             end
