@@ -198,14 +198,15 @@ function start_image_viewer(stack_paths)
             [template,templatePosition] = getTemplate(mode, frame_num);
             % if the template is all zeros, get the next frame
             while all(template(:) == 0)
+                display_warning("Template is all zeros, getting next frame");
                 frame_num = frame_num + 1;
                 shorten_stack_callback(0, 0, frame_num, stack_info.end_index);
                 [template, templatePosition] = getTemplate(mode, frame_num);
             end
             % match the template with each image in the stack
             displacements = matchTemplate(template, templatePosition);
-            displacements(:,1) = displacements(:,1)-displacements(1,1);
-            displacements(:,2) = displacements(:,2)-displacements(1,2);
+            displacements(:,1) = displacements(:,1)-displacements(stack_info.start_index,1);
+            displacements(:,2) = displacements(:,2)-displacements(stack_info.start_index,2);
             stack_info.displacements = displacements;
             % Display the displacements
             plot_displacements();
@@ -258,6 +259,7 @@ function start_image_viewer(stack_paths)
     function [template,position] = getTemplate(mode, frame_num)
         % set slider to first image
         image_idx = stack_info.start_index + frame_num - 1;
+        display_warning(sprintf("Getting template from image %d frame %d", image_idx, frame_num));
         setFrame(frame_num);
         windowSize = 100;
         x_offset = 5;
@@ -309,7 +311,7 @@ function start_image_viewer(stack_paths)
             wait_for_keypress("n");
             start_index = round(get(slider, 'Value'));
             display_warning("go to end frame and press n");
-            setFrame(stack_info.end_index);
+            setFrame(stack_info.end_index-stack_info.start_index + 1);
             wait_for_keypress("n");
             end_index = round(get(slider, 'Value'));
         end
@@ -435,13 +437,13 @@ function start_image_viewer(stack_paths)
     end
     function align_all_stacks_callback(~,~)
         % iterate over all the stacks and align them
-        for i = 1:length(stack_paths)
+        for i = 18:length(stack_paths)
             set(stack_dropdown, 'Value', i);
             load_images_callback();
-            if stack_info.aligned == true
-                logs{end+1} = sprintf("Trial %s already aligned",stack_paths(i));
-                continue;
-            end
+            % if stack_info.aligned == true
+            %     logs{end+1} = sprintf("Trial %s already aligned",stack_paths(i));
+            %     continue;
+            % end
             align_stack_callback('mode', 'auto');
         end
     end
