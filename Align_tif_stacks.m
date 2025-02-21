@@ -43,6 +43,10 @@ function start_image_viewer(stack_paths)
     searchWindow = 50;
     folder_ico = imread('./folder.png');
     folder_ico = imresize(folder_ico, [20, 20]);
+    next_ico = imread('./next.png');
+    next_ico = imresize(next_ico, [20, 20]);
+    prev_ico = imread('./prev.png');
+    prev_ico = imresize(prev_ico, [20, 20]);
     % Create axes on the axes panel
     ax1 = axes(axesPanel, 'Position', [0.01 0.2 0.49 0.7]);
     ax2 = axes(axesPanel, 'Position', [0.5 0.2 0.49 0.7]);
@@ -75,7 +79,14 @@ function start_image_viewer(stack_paths)
     frame_number = uicontrol('Parent', f, 'Style', 'text', 'Position', [530 60 50 20], 'String', '1','FontSize', 14);
     slider = uicontrol(axesPanel, 'Style', 'slider', 'Units', 'normalized', 'Position', [0.1 0.06 0.6 0.08], ...
         'Callback', @slider_callback, 'Visible', 'on');
-    
+    % Create a "Next stack" button
+    nextStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', '', ...
+        'Units', 'normalized', 'Position', [0.1 0.93 0.08 0.03], 'CData', next_ico,...
+         'Callback', @next_stack_callback, 'Enable', 'on');
+    prevStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', '', ...
+        'Units', 'normalized', 'Position', [0.03 0.93 0.08 0.03], 'CData', prev_ico,...
+            'Callback', @prev_stack_callback, 'Enable', 'on');
+
         % Create play/pause button beside the scrollbar
     play_icon = imread('./play.png');
     play_icon = imresize(play_icon, [40, 40]);
@@ -298,7 +309,7 @@ function start_image_viewer(stack_paths)
             wait_for_keypress("n");
             start_index = round(get(slider, 'Value'));
             display_warning("go to end frame and press n");
-            setFrame(stack_info.img_data.num_imgs);
+            setFrame(stack_info.end_index);
             wait_for_keypress("n");
             end_index = round(get(slider, 'Value'));
         end
@@ -459,6 +470,22 @@ function start_image_viewer(stack_paths)
             stop(play_timer);
             set(play_pause_button, 'CData', play_icon);
             is_playing = false;
+        end
+    end
+    function next_stack_callback(~, ~)
+        if get(stack_dropdown, 'Value') < length(get(stack_dropdown, 'String'))
+            set(stack_dropdown, 'Value', get(stack_dropdown, 'Value') + 1);
+            load_images_callback();
+        else
+            display_warning("You're on the last stack");
+        end
+    end
+    function prev_stack_callback(~, ~)
+        if get(stack_dropdown, 'Value') < length(get(stack_dropdown, 'String'))
+            set(stack_dropdown, 'Value', get(stack_dropdown, 'Value') - 1);
+            load_images_callback();
+        else
+            display_warning("You're on the last stack");
         end
     end
 end
