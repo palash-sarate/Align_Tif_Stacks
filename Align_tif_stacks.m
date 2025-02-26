@@ -60,6 +60,8 @@ function start_image_viewer(stack_paths)
         'Callback', @open_directory_callback, 'Enable', 'on');
     drawMasks_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Draw mask', ...
         'Units', 'normalized','Position', [0.2 0.7 0.6 0.06], 'Callback', @draw_masks_callback, 'Enable', 'on');
+    deadZone_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Mark dead zone', ...
+        'Units', 'normalized','Position', [0.2 0.64 0.6 0.06], 'Callback', @mark_dead_zone_callback, 'Enable', 'on');
     shortenStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Shorten stack', ...
         'Units', 'normalized','Position', [0.2 0.58 0.6 0.06], 'Callback', @shorten_stack_callback, 'Enable', 'on');
     alignStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Align stack', ...
@@ -92,6 +94,19 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized','Position', [0.2 0.15 0.6 0.06], 'Callback', @skip_alignment_callback, 'Enable', 'off');
     stack_label = uicontrol(buttonPanel, 'Style', 'text', 'String', 'Stack #1', ...
         'Units', 'normalized', 'Position', [0.2 0.96 0.6 0.03]);
+    % create info UI
+    uicontrol(buttonPanel, 'Style', 'text', 'String', 'N:', ...
+        'Units', 'normalized', 'Position', [-0.1 0.82 0.4 0.08]);
+    uicontrol(buttonPanel, 'Style', 'text', 'String', 'f:', ...
+        'Units', 'normalized', 'Position', [0.15 0.82 0.4 0.08]);
+    uicontrol(buttonPanel, 'Style', 'text', 'String', 'Iter:', ...
+        'Units', 'normalized', 'Position', [0.4 0.82 0.4 0.08]);
+    N_info = uicontrol(buttonPanel, 'Style', 'edit', ...
+        'Units', 'normalized', 'Position', [0.15 0.87 0.1 0.04], 'String', '1');
+    f_info = uicontrol(buttonPanel, 'Style', 'edit', ...
+        'Units', 'normalized', 'Position', [0.4 0.87 0.1 0.04], 'String', '1');
+    i_info = uicontrol(buttonPanel, 'Style', 'edit', ...
+        'Units', 'normalized', 'Position', [0.65 0.87 0.1 0.04], 'String', '1');
     % Create play/pause button beside the scrollbar
     play_icon = imread('./play.png');
     play_icon = imresize(play_icon, [40, 40]);
@@ -137,6 +152,7 @@ function start_image_viewer(stack_paths)
     function load_images_callback(~, ~)
         current_idx = get(stack_dropdown, 'Value');
         path = stack_paths{current_idx};
+        update_info(path);
         [iteration, parentDir] = getIteration(path);
         set(stack_label, 'String', sprintf('Stack #%d of %d', current_idx, length(stack_paths)));
 
@@ -355,7 +371,7 @@ function start_image_viewer(stack_paths)
         end
         % reset imgs after 100 frames
         if counter > 100
-            display_warning("Resetting images");
+            % display_warning("Resetting images");
             counter = 0;
             stack_info.img_data.imgs = cell(1, stack_info.img_data.num_imgs);
         end
@@ -451,7 +467,7 @@ function start_image_viewer(stack_paths)
         stack_info.end_index = end_index;
         set(slider, 'Min', 1, 'Max', end_index - start_index + 1, 'Value', 1, ...
             'SliderStep', [1/(end_index-start_index) , 1/(end_index-start_index)], 'Visible', 'On');
-        set(to_frame, 'String', num2str(end_index));
+        set(to_frame, 'String', num2str(end_index - start_index + 1));
         setFrame(1);
     end
     function display_warning(msg)
@@ -483,10 +499,10 @@ function start_image_viewer(stack_paths)
         if isempty(last_scroll_time)
             last_scroll_time = now;  % initialize to the current time
         end
-        time_between_scrolls = (now - last_scroll_time) * 24 * 60 * 60;  % in seconds
+        time_between_scrolls = seconds(now - last_scroll_time);  % in seconds
         last_scroll_time = now;  % update for next time
     
-        step_size = max(1, round(1 / time_between_scrolls*0.1));  % larger step size for smaller time_between_scrolls
+        step_size = max(1, round(1 / time_between_scrolls * 0.5));  % larger step size for smaller time_between_scrolls
     
         current_value = get(slider, 'Value');
         if event.VerticalScrollCount > 0  % if scrolling down
@@ -504,6 +520,13 @@ function start_image_viewer(stack_paths)
         else        
             % Get the current slider value
             slider_value = round(get(slider, 'Value'));
+            if isfield(stack_info, 'dead_zone')
+                if slider_value >= stack_info.dead_zone(1) && slider_value <= stack_info.dead_zone(2)
+                    display_warning("Dead zone, skipping");
+                    setFrame(stack_info.dead_zone(2) + 1);
+                    set(slider, 'Value', stack_info.dead_zone(2) + 1);
+                end
+            end
             setFrame(slider_value)
         end
     end
@@ -615,5 +638,33 @@ function start_image_viewer(stack_paths)
         else
             display_warning("You're on the last stack");
         end
+    end
+    function mark_dead_zone_callback(~,~)
+        % get the start and end frame of the dead timeline and save it in the stack_info
+        display_warning("Select the start frame of the dead timeline");
+        wait_for_keypress("n");
+        start_frame = round(get(slider, 'Value'));
+        display_warning("Select the end frame of the dead timeline");
+        wait_for_keypress("n");
+        end_frame = round(get(slider, 'Value'));   
+        stack_info.dead_zone = [start_frame, end_frame];
+        save_stack_callback();
+    end
+    function [N, fs] = get_info(path)
+        if isa(path, 'char')
+            path = string(path);
+        end
+        % E:\shake_table_data\N12\10hz_hopperflow\60deg\10cm\1
+        parts = path.split("\");
+        N = sscanf(parts{3}, 'N%d');
+        fs = sscanf(parts{4}, '%dhz_hopperflow');
+    end
+    function update_info(path)
+        % cancel any ongoing operation
+        [iteration, ~] = getIteration(path);
+        [N, fs] = get_info(path);
+        set(N_info, 'String', N);
+        set(f_info, 'String', fs);
+        set(i_info, 'String', iteration);
     end
 end
