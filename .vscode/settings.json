@@ -2,6 +2,7 @@
     "cSpell.words": [
         "assignin",
         "disp",
+        "drawpolygon",
         "drawrectangle",
         "fprintf",
         "fullfile",
@@ -11,6 +12,7 @@
         "imresize",
         "imtranslate",
         "ischar",
+        "isfield",
         "keypress",
         "keypressed",
         "nargin",

@@ -58,6 +58,8 @@ function start_image_viewer(stack_paths)
     open_dir_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', '', ...
         'Units', 'normalized','Position', [0.8 0.93 0.08 0.03], 'CData', folder_ico,...
         'Callback', @open_directory_callback, 'Enable', 'on');
+    drawMasks_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Draw mask', ...
+        'Units', 'normalized','Position', [0.2 0.7 0.6 0.06], 'Callback', @draw_masks_callback, 'Enable', 'on');
     shortenStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Shorten stack', ...
         'Units', 'normalized','Position', [0.2 0.58 0.6 0.06], 'Callback', @shorten_stack_callback, 'Enable', 'on');
     alignStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Align stack', ...
@@ -76,9 +78,9 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized', 'Position', [0.2 0.22 0.2 0.04], 'String', '1');
     to_frame = uicontrol(buttonPanel, 'Style', 'edit', ...
         'Units', 'normalized', 'Position', [0.6 0.22 0.2 0.04], 'String', '1');
-    frame_number = uicontrol('Parent', f, 'Style', 'text', 'Position', [530 60 50 20], 'String', '1','FontSize', 14);
     slider = uicontrol(axesPanel, 'Style', 'slider', 'Units', 'normalized', 'Position', [0.1 0.06 0.6 0.08], ...
         'Callback', @slider_callback, 'Visible', 'on');
+    frame_number = uicontrol(axesPanel, 'Style', 'text','Units', 'normalized', 'Position', [0.7 0.04 0.1 0.08], 'String', '1','FontSize', 14);
     % Create a "Next stack" button
     nextStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', '', ...
         'Units', 'normalized', 'Position', [0.1 0.93 0.08 0.03], 'CData', next_ico,...
@@ -86,8 +88,11 @@ function start_image_viewer(stack_paths)
     prevStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', '', ...
         'Units', 'normalized', 'Position', [0.03 0.93 0.08 0.03], 'CData', prev_ico,...
             'Callback', @prev_stack_callback, 'Enable', 'on');
-
-        % Create play/pause button beside the scrollbar
+    skip_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Skip', ...
+        'Units', 'normalized','Position', [0.2 0.15 0.6 0.06], 'Callback', @skip_alignment_callback, 'Enable', 'off');
+    stack_label = uicontrol(buttonPanel, 'Style', 'text', 'String', 'Stack #1', ...
+        'Units', 'normalized', 'Position', [0.2 0.96 0.6 0.03]);
+    % Create play/pause button beside the scrollbar
     play_icon = imread('./play.png');
     play_icon = imresize(play_icon, [40, 40]);
     pause_icon = imread('./pause.png');
@@ -98,22 +103,27 @@ function start_image_viewer(stack_paths)
     play_timer = timer('ExecutionMode', 'fixedRate', 'Period', 0.1, 'TimerFcn', @play_timer_callback);
    
     % Create indicators for aligned and shortened statuses
-    aligned_indicator = create_indicator(buttonPanel, [0.2 0.8 0.1 0.05], "Aligned", @remove_alignment_callback);
-    shortened_indicator = create_indicator(buttonPanel, [0.2 0.7 0.1 0.05], "Shortened");
+    aligned_indicator = create_indicator(buttonPanel, [0 0.8 0.3 0.05], "Aligned", @remove_alignment_callback);
+    shortened_indicator = create_indicator(buttonPanel, [0.5 0.8 0.3 0.05], "Shortened", @remove_shortening_callback);
     logs = {}; % Initialize logs list
     stack_info = struct();
-    
+    skip_alignment = false;
+
+    function skip_alignment_callback(~, ~)
+        % skip the current stack
+        skip_alignment = true;
+    end
     % load_images_callback();
     function indicator = create_indicator(parent, position, label, delete_callback)
         indicator = uicontrol(parent, 'Style', 'text', 'String', label, ...
-        'Units', 'normalized', 'Position', [position(1)+0.1 position(2) 0.4 0.05], 'BackgroundColor', 'red');
+        'Units', 'normalized', 'Position', [position(1)+0.1 position(2) position(3) position(4)], 'BackgroundColor', 'red');
         % if delete_callback is provided, set the callback for the indicator
         if exist('delete_callback', 'var')
             % add a dustbin icon to delete the indicator
             dustbin = imread('./bin_icon.png');
             dustbin = imresize(dustbin, [20, 20]);
             uicontrol(parent, 'Style', 'pushbutton', 'Units', 'normalized', ...
-                'Position', [position(1) + 0.5 position(2) 0.08 0.05], 'CData', dustbin, ...
+                'Position', [position(1) + position(3) + 0.05 position(2) 0.08 0.05], 'CData', dustbin, ...
                 'Callback', delete_callback);
         end
     end
@@ -125,8 +135,10 @@ function start_image_viewer(stack_paths)
         end
     end
     function load_images_callback(~, ~)
-        path = stack_paths{get(stack_dropdown, 'Value')};
+        current_idx = get(stack_dropdown, 'Value');
+        path = stack_paths{current_idx};
         [iteration, parentDir] = getIteration(path);
+        set(stack_label, 'String', sprintf('Stack #%d of %d', current_idx, length(stack_paths)));
 
         if exist(sprintf('%s//stack_info_%s.mat', parentDir, iteration), 'file')
             stack_info = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration));
@@ -157,7 +169,7 @@ function start_image_viewer(stack_paths)
             % clear axis
             cla(ax2);
         end
-        shorten_slider(stack_info.start_index, stack_info.end_index)
+        shorten_slider(stack_info.start_index, stack_info.end_index);        
     end
     function plot_displacements()
         displacements = stack_info.displacements;
@@ -174,11 +186,14 @@ function start_image_viewer(stack_paths)
             plot(ax2, stack_info.end_index, [-5, 5], 'g');
         end
         title('Displacements');
-        xlabel('Frame number');
+        xlabel('Image number');
         ylabel('Displacement');
         legend('x', 'y');
+        axis(ax2, 'tight'); 
     end
     function align_stack_callback(varargin)
+        skip_alignment = false;
+        skip_button.Enable = 'on';
         % Check if the function is called as a callback
         if nargin > 0 && isa(varargin{1},'matlab.ui.control.UIControl')
             % Called as a callback, set default mode
@@ -205,16 +220,21 @@ function start_image_viewer(stack_paths)
             end
             % match the template with each image in the stack
             displacements = matchTemplate(template, templatePosition);
-            displacements(:,1) = displacements(:,1)-displacements(stack_info.start_index,1);
-            displacements(:,2) = displacements(:,2)-displacements(stack_info.start_index,2);
-            stack_info.displacements = displacements;
-            % Display the displacements
-            plot_displacements();
-            % save displacements for later use
-            stack_info.aligned = true;
-            toggle_indicator(aligned_indicator, true);
-            save_stack_callback();
+            if ~skip_alignment
+                % subtract the displacements of the first frame from all the displacements
+                displacements(:,1) = displacements(:,1)-displacements(stack_info.start_index,1);
+                displacements(:,2) = displacements(:,2)-displacements(stack_info.start_index,2);
+                stack_info.displacements = displacements;
+                % Display the displacements
+                plot_displacements();
+                % save displacements for later use
+                stack_info.aligned = true;
+                toggle_indicator(aligned_indicator, true);
+                save_stack_callback();
+            end
         end
+        % disable skip button
+        skip_button.Enable = 'off';
     end
     function remove_alignment_callback(~, ~)
         % remove the displacements file
@@ -227,12 +247,28 @@ function start_image_viewer(stack_paths)
         % add star to save button
         save_button.String = 'Save *';
     end
+    function remove_shortening_callback(~, ~)
+        % remove the displacements file
+        stack_info.shortened = false;
+        stack_info.start_index = 1;
+        stack_info.end_index = numel(stack_info.img_data.img_files);
+        shorten_slider(1, numel(stack_info.img_data.img_files));
+        toggle_indicator(shortened_indicator, false);
+        % get current frame
+        frame = get(slider, 'Value');
+        setFrame(frame);
+        % add star to save button
+        save_button.String = 'Save *';
+    end
     function displacements = matchTemplate(template, templatePosition)
         displacements = zeros(stack_info.img_data.num_imgs, 2);
         % f = waitbar(0,'Please wait...','Name','Aligning stack...');
         WaitMessage = parfor_wait(stack_info.img_data.num_imgs, 'Waitbar', true);
         img_data = stack_info.img_data;
         parfor k = 1:stack_info.img_data.num_imgs
+            if skip_alignment
+                error('Alignment skipped');
+            end
             % display_warning(num2str(k));
             baseFileName = img_data.img_files(k).name;
             fullFileName = fullfile(img_data.img_files(k).folder, baseFileName);
@@ -256,6 +292,43 @@ function start_image_viewer(stack_paths)
         end
         WaitMessage.Destroy
     end
+    % GPU accelerated function to compare first n images with previous image
+    function maxDiffIndex = matchImages(n)
+        differences = zeros(n, 1);
+        % f = waitbar(0,'Please wait...','Name','Aligning stack...');
+        WaitMessage = parfor_wait(n, 'Waitbar', true);
+        img_data = stack_info.img_data;
+        roi = [200, 750, 400, 100]; % [x, y, width, height]
+        for k = 2:n
+            % display_warning(num2str(k));
+            baseFileName = img_data.img_files(k-1).name;
+            fullFileName = fullfile(img_data.img_files(k-1).folder, baseFileName);
+            template = imread(fullFileName);
+            template = imcrop(mat2gray(template), roi);
+            displaced_img1 = imtranslate(template, - stack_info.displacements(k-1, :));
+            % imshow(displaced_img1, 'Parent', ax1);
+            baseFileName = img_data.img_files(k).name;
+            fullFileName = fullfile(img_data.img_files(k).folder, baseFileName);
+            bwImage = imread(fullFileName);
+            bwImage = imcrop(mat2gray(bwImage), roi);
+            displaced_img2 = imtranslate(bwImage, - stack_info.displacements(k, :));
+
+            difference = imabsdiff(displaced_img1, displaced_img2);
+            differences(k) = sum(difference(:));
+            WaitMessage.Send;
+        end
+        WaitMessage.Destroy
+        maxDiffIndex = find(differences == max(differences));
+        stack_info.maxDiffIndex = maxDiffIndex;
+        save_stack_callback();
+    end
+    function lastNonConstIndex = findLastNonConstIndex(arr)
+        displacements = stack_info.displacements;
+        displacements(:,1) = displacements(:,1) - displacements(end,1);
+        displacements(:,2) = displacements(:,2) - displacements(end,2);
+        % find the last non zero index
+        lastNonConstIndex = find(displacements(:,2), 1, 'last');
+    end
     function [template,position] = getTemplate(mode, frame_num)
         % set slider to first image
         image_idx = stack_info.start_index + frame_num - 1;
@@ -274,21 +347,37 @@ function start_image_viewer(stack_paths)
         position = round(h.Position);
         template = imcrop(mat2gray(stack_info.img_data.imgs{image_idx}), position);
     end
-
     function setFrame(k)
+        persistent counter;
+        % initialize the counter
+        if isempty(counter)
+            counter = 0;
+        end
+        % reset imgs after 100 frames
+        if counter > 100
+            display_warning("Resetting images");
+            counter = 0;
+            stack_info.img_data.imgs = cell(1, stack_info.img_data.num_imgs);
+        end
         image_idx = stack_info.start_index + k - 1;
         % fprintf('Frame number: %d\n image idx %d', k, image_idx);
         % Get the current slider value
         set(frame_number, 'String', num2str(k)); % Update the frame number display
         set(slider, 'Value', k);  % update the slider value
-        % Display the corresponding image
-        if isempty(stack_info.img_data.imgs{image_idx})
+        % load the image if it's not already loaded
+        if isempty(stack_info.img_data.imgs{image_idx})            
             % fprintf('Loading image %d as its empty', image_idx);
             stack_info.img_data.imgs{image_idx} = mat2gray(imread(fullfile(stack_info.img_data.img_files(image_idx).folder, stack_info.img_data.img_files(image_idx).name)));
+            counter = counter + 1;
         end
         % if aligned displacements exist, apply them to the image
         if stack_info.aligned == true
             displaced_img = imtranslate(stack_info.img_data.imgs{image_idx}, - stack_info.displacements(image_idx, :));
+            if isfield(stack_info, 'masked')
+                if stack_info.masked == true
+                    displaced_img = imoverlay(displaced_img, stack_info.mask, 'r');
+                end
+            end 
             imshow(displaced_img, 'Parent', ax1);
         else
             imshow(stack_info.img_data.imgs{image_idx}, 'Parent', ax1);
@@ -302,24 +391,58 @@ function start_image_viewer(stack_paths)
                     'Position', [0 0 1 1], 'String', logs, 'FontSize', 12);
     end
     function [start_index, end_index] = shorten_stack_callback(~, ~, start_, end_)
-        setFrame(1);
+        remove_shortening_callback();
+        % check if stack_info has maxDiffIndex
+        if ~isfield(stack_info, 'maxDiffIndex')
+            maxDiffIndex = matchImages(300);
+            display_warning(sprintf("Max difference index: %d", maxDiffIndex));
+        end
+        setFrame(stack_info.maxDiffIndex);
         if nargin > 2
             start_index = start_;
             end_index = end_;
         else
             display_warning("go to start frame and press n");
             wait_for_keypress("n");
-            start_index = round(get(slider, 'Value'));
+            start_index = stack_info.start_index + round(get(slider, 'Value')) - 1;
             display_warning("go to end frame and press n");
             setFrame(stack_info.end_index-stack_info.start_index + 1);
             wait_for_keypress("n");
-            end_index = round(get(slider, 'Value'));
+            end_index = stack_info.start_index + round(get(slider, 'Value')) - 1;
         end
         shorten_slider(start_index, end_index);
         stack_info.shortened = true;
         toggle_indicator(shortened_indicator, true);
         % save the start and end indices in a stack_info.mat file
         save_stack_callback();
+    end
+    function draw_masks_callback(~,~)
+        % draw two right angle triangles on the image
+        if isfield(stack_info, 'masked')
+            if stack_info.masked == true
+                left_vertices = stack_info.mask_vertices(1:3, :);
+                right_vertices = stack_info.mask_vertices(4:6, :);
+            end
+        else
+            left_vertices = [0 400;0 800;250 800];
+            right_vertices = [800 400;800 800;550 800];
+        end 
+
+        left_triangle = drawpolygon(ax1, 'Position', left_vertices);
+        right_triangle = drawpolygon(ax1, 'Position', right_vertices);
+        display_warning("Press n to save the mask");
+        wait_for_keypress("n");
+        % get the mask from the drawn triangles
+        mask = createMask(left_triangle) | createMask(right_triangle);
+        % save the mask
+        stack_info.mask = mask;
+        stack_info.mask_vertices = [left_triangle.Position; right_triangle.Position];
+        stack_info.masked = true;
+        save_stack_callback();
+        % clear the drawn triangles
+        delete(left_triangle);
+        delete(right_triangle);
+        setFrame(get(slider, 'Value'));
     end
     function shorten_slider(start_index, end_index)
         % display_warning(sprintf("Shortening stack from %d to %d", start_index, end_index));
@@ -412,6 +535,9 @@ function start_image_viewer(stack_paths)
         if stack_info.img_data.num_imgs == 0
             display_warning("load some images first");
         else
+            while isfield(stack_info, 'stack_info')
+                stack_info = stack_info.stack_info;
+            end
             temp_stack_info = stack_info;
             % get the current stack path
             path = stack_paths{get(stack_dropdown, 'Value')};
