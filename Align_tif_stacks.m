@@ -10,7 +10,7 @@ folder = 'E:\shake_table_data\';
 
 % populate the list of paths to the tiff stacks
 Ns = [4,12,24,48];
-fs = [10,12,14,16,18,20];
+fs = [4,6,8,10,12,14,16,18,20];
 deg = 60;
 wd = 10;
 stack_paths = [];
@@ -107,6 +107,8 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized', 'Position', [0.4 0.87 0.1 0.04], 'String', '1');
     i_info = uicontrol(buttonPanel, 'Style', 'edit', ...
         'Units', 'normalized', 'Position', [0.65 0.87 0.1 0.04], 'String', '1');
+    goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'go to', ...
+    'Units', 'normalized','Position', [0.77 0.87 0.15 0.04], 'Callback', @goto_callback);
     % Create play/pause button beside the scrollbar
     play_icon = imread('./play.png');
     play_icon = imresize(play_icon, [40, 40]);
@@ -530,6 +532,21 @@ function start_image_viewer(stack_paths)
             setFrame(slider_value)
         end
     end
+    function goto_callback(~, ~)
+        % go to the specified stack
+        N = str2double(get(N_info, 'String'));
+        f = str2double(get(f_info, 'String'));
+        i = str2double(get(i_info, 'String'));
+        path = sprintf('E:\\shake_table_data\\N%d\\%dhz_hopperflow\\60deg\\10cm\\%d', N, f, i);
+        % get index of the matching path from stack_paths
+        idx = find(contains(stack_paths, path));
+        if isempty(idx)
+            display_warning("Invalid stack number");
+        else
+            set(stack_dropdown, 'Value', idx);
+            load_images_callback();
+        end
+    end
     function wait_for_keypress(key_to_wait_for)
         keypressed = 0;  % UserData is 0 before key press
         set(f, 'KeyPressFcn', @myKeyPressFcn)
@@ -586,13 +603,13 @@ function start_image_viewer(stack_paths)
     end
     function align_all_stacks_callback(~,~)
         % iterate over all the stacks and align them
-        for i = 18:length(stack_paths)
+        for i = 1:length(stack_paths)
             set(stack_dropdown, 'Value', i);
             load_images_callback();
-            % if stack_info.aligned == true
-            %     logs{end+1} = sprintf("Trial %s already aligned",stack_paths(i));
-            %     continue;
-            % end
+            if stack_info.aligned == true
+                logs{end+1} = sprintf("Trial %s already aligned",stack_paths(i));
+                continue;
+            end
             align_stack_callback('mode', 'auto');
         end
     end
