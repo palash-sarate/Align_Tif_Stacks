@@ -2,43 +2,54 @@ clc;
 close all;
 imtool close all;  % Close all imtool figures.
 clear;  % Erase all existing variables.
+py.sys.path().append('E:\shake_table_data\Align_Tif_Stacks');
 % workspace;  % Make sure the workspace panel is showing.
 % start parallel pool
 % parpool(4);
-% directory of the tif stacks
-folder = 'E:\shake_table_data\';
 
-% populate the list of paths to the tiff stacks
-Ns = [4,12,24,48];
-fs = [4,6,8,10,12,14,16,18,20];
-deg = 60;
-wd = 10;
-stack_paths = [];
 
-for n = 1:length(Ns)
-    for freq = 1:length(fs)
-        for w = 1:length(wd)
-            % Construct the path with escaped backslashes
-            path = sprintf("E:\\shake_table_data\\N%d\\%dhz_hopperflow\\%ddeg\\%dcm\\",Ns(n),fs(freq),deg,wd);
-            % find folders in the path directory
-            subFolders = dir(path);
-            subFolders = subFolders([subFolders.isdir]);  % Keep only directories
-            subFolders = subFolders(~ismember({subFolders.name}, {'.', '..'}));  % Remove '.' and '..' directories
 
-            for k = 1:length(subFolders)
-                stack_paths = [stack_paths; fullfile(path, subFolders(k).name)];
+stack_paths = get_stack_paths();
+start_image_viewer(stack_paths);
+
+function stack_paths = get_stack_paths()
+    % directory of the tif stacks
+    % folder = 'E:\shake_table_data\';
+    % populate the list of paths to the tiff stacks
+    Ns = [4,12,24,48];
+    fs = [4,6,8,10,12,14,16,18,20];
+    deg = 60;
+    wd = 10;
+    stack_paths = [];
+
+    for n = 1:length(Ns)
+        for freq = 1:length(fs)
+            for w = 1:length(wd)
+                % Construct the path with escaped backslashes
+                path = sprintf("E:\\shake_table_data\\N%d\\%dhz_hopperflow\\%ddeg\\%dcm\\",Ns(n),fs(freq),deg,wd);
+                % find folders in the path directory
+                subFolders = dir(path);
+                subFolders = subFolders([subFolders.isdir]);  % Keep only directories
+                subFolders = subFolders(~ismember({subFolders.name}, {'.', '..'}));  % Remove '.' and '..' directories
+
+                for k = 1:length(subFolders)
+                    stack_paths = [stack_paths; fullfile(path, subFolders(k).name)];
+                end
             end
         end
     end
+
+    stack_paths = [stack_paths; "E:\shake_table_data\time_control\\1"];
+    stack_paths = [stack_paths; "E:\shake_table_data\time_control\\2"];
+    stack_paths = [stack_paths; "E:\shake_table_data\time_control\\3"];
 end
-start_image_viewer(stack_paths);
 % function to open the given list of tif images in a scrollable window
 function start_image_viewer(stack_paths)
     close all;
     % Create figure and panel on it
     f = figure('Name', 'Simple Image Viewer', 'NumberTitle', 'Off','WindowState','maximized', 'WindowScrollWheelFcn', @scrollWheelMoved);
     % Create panels on the figure
-    buttonPanel = uipanel(f, 'Units', 'normalized', 'Position', [0 0 0.2 1]);%[left bottom width height]
+    buttonPanel = uipanel(f, 'Units', 'normalized', 'Position', [0 0 0.2 1]); % [left bottom width height]
     axesPanel = uipanel(f, 'Units', 'normalized', 'Position', [0.2 0 0.8 1]);
     searchWindow = 50;
     folder_ico = imread('./folder.png');
@@ -107,8 +118,10 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized', 'Position', [0.4 0.87 0.1 0.04], 'String', '1');
     i_info = uicontrol(buttonPanel, 'Style', 'edit', ...
         'Units', 'normalized', 'Position', [0.65 0.87 0.1 0.04], 'String', '1');
-    goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'go to', ...
+    goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'load', ...
     'Units', 'normalized','Position', [0.77 0.87 0.15 0.04], 'Callback', @goto_callback);
+    get_time = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Get time', ...
+        'Units', 'normalized','Position', [0.2 0.1 0.6 0.06], 'Callback', @get_time_ocr, 'Enable', 'on');
     % Create play/pause button beside the scrollbar
     play_icon = imread('./play.png');
     play_icon = imresize(play_icon, [40, 40]);
@@ -125,7 +138,30 @@ function start_image_viewer(stack_paths)
     logs = {}; % Initialize logs list
     stack_info = struct();
     skip_alignment = false;
+    function get_time_ocr(~,~)
+        % get the time from the image
+        slider_idx = round(get(slider, 'Value'));
+        image_idx = stack_info.start_index + slider_idx - 1;
 
+        % img_path = fullfile(stack_info.img_data.img_files(image_idx).folder, stack_info.img_data.img_files(image_idx).name);
+        % h = drawrectangle('Parent', ax1);wait(h);
+        % roi = round(h.Position);
+        % roi_python = int32([roi(1), roi(2), roi(3), roi(4)]);
+        % % get the time from the cropped image
+        % ocr_results = py.EasyOcr.ocr_from_file(img_path, roi_python);
+        % assignin('base', 'ocr_results', char(ocr_results));
+        % % assignin('base', 'roi', roi);
+        % % display_warning(ocr_results.Text);
+
+        img = imread(fullfile(stack_info.img_data.img_files(image_idx).folder, stack_info.img_data.img_files(image_idx).name));
+        h = drawrectangle('Parent', ax1);wait(h);
+        roi = round(h.Position);
+        % get the time from the cropped image
+        ocr_results = ocr(img, roi,Model="english");
+        % assignin('base', 'ocr_results', ocr_results);
+        % assignin('base', 'roi', roi);
+        display_warning(ocr_results.Text);
+    end
     function skip_alignment_callback(~, ~)
         % skip the current stack
         skip_alignment = true;
