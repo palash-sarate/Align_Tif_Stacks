@@ -2,7 +2,9 @@ clc;
 close all;
 imtool close all;  % Close all imtool figures.
 clear;  % Erase all existing variables.
-py.sys.path().append('E:\shake_table_data\Align_Tif_Stacks');
+if count(py.sys.path,pwd) == 0
+    insert(py.sys.path,int32(0),pwd);
+end
 % workspace;  % Make sure the workspace panel is showing.
 % start parallel pool
 % parpool(4);
@@ -121,7 +123,10 @@ function start_image_viewer(stack_paths)
     goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'load', ...
     'Units', 'normalized','Position', [0.77 0.87 0.15 0.04], 'Callback', @goto_callback);
     get_time = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Get time', ...
-        'Units', 'normalized','Position', [0.2 0.1 0.6 0.06], 'Callback', @get_time_ocr, 'Enable', 'on');
+        'Units', 'normalized','Position', [0.2 0.1 0.6 0.06], 'Callback', @get_times, 'Enable', 'on');
+    % add forced checkbox beside get_time
+    forced_checkbox = uicontrol(buttonPanel, 'Style', 'checkbox', 'String', 'Forced', ...
+        'Units', 'normalized', 'Position', [0.8 0.1 0.2 0.06]);
     % Create play/pause button beside the scrollbar
     play_icon = imread('./play.png');
     play_icon = imresize(play_icon, [40, 40]);
@@ -138,30 +143,68 @@ function start_image_viewer(stack_paths)
     logs = {}; % Initialize logs list
     stack_info = struct();
     skip_alignment = false;
-    function get_time_ocr(~,~)
+    function ocr_results = get_time_ocr(k)
         % get the time from the image
-        slider_idx = round(get(slider, 'Value'));
+        slider_idx = k;
         image_idx = stack_info.start_index + slider_idx - 1;
 
-        % img_path = fullfile(stack_info.img_data.img_files(image_idx).folder, stack_info.img_data.img_files(image_idx).name);
+        img_path = fullfile(stack_info.img_data.img_files(image_idx).folder, stack_info.img_data.img_files(image_idx).name);
         % h = drawrectangle('Parent', ax1);wait(h);
         % roi = round(h.Position);
         % roi_python = int32([roi(1), roi(2), roi(3), roi(4)]);
-        % % get the time from the cropped image
-        % ocr_results = py.EasyOcr.ocr_from_file(img_path, roi_python);
-        % assignin('base', 'ocr_results', char(ocr_results));
-        % % assignin('base', 'roi', roi);
-        % % display_warning(ocr_results.Text);
-
-        img = imread(fullfile(stack_info.img_data.img_files(image_idx).folder, stack_info.img_data.img_files(image_idx).name));
-        h = drawrectangle('Parent', ax1);wait(h);
-        roi = round(h.Position);
         % get the time from the cropped image
-        ocr_results = ocr(img, roi,Model="english");
-        % assignin('base', 'ocr_results', ocr_results);
+        ocr_results = py.EasyOcr.ocr_from_file(img_path, []);
+        % assignin('base', 'ocr_results', char(ocr_results));
         % assignin('base', 'roi', roi);
-        display_warning(ocr_results.Text);
+        % display_warning(ocr_results.Text);
     end
+    % function to start getting the times for every nth image and also has the option to stop the current operation
+    function get_times(~, ~)
+        % set get times button to cancel get times that can cancel the operation
+        get_time.String = 'Get time *';
+        % get the time from every nth image
+        n = 100;
+        % create empty cell array to store results if stack_info doesnt have it already
+        if ~isfield(stack_info, 'ocr_results')
+            stack_info.ocr_results = cell(1, stack_info.img_data.num_imgs);            
+        end
+        for i = 1:n:stack_info.img_data.num_imgs   
+            % skip if stack_info.ocr_results{i} already exists
+            % if ~isempty(stack_info.ocr_results{i})
+            %     continue;
+            % end  
+            py_results = get_time_ocr(i);
+            display_warning(sprintf("frame %d processed",i));
+            % convert results from python list to cell array
+            results = pyList2cell(py_results);
+            % add results to stack info 
+            stack_info.ocr_results{i} = results;
+            assignin('base', 'ocr_results', stack_info.ocr_results);
+        end
+        save_stack_callback();
+        get_time.String = 'Get time';
+    end
+    function out = pyList2cell(pyobj)
+        % Converts a python list/tuple of lists/tuples into a nested cell array.
+        out = cell(pyobj); % Convert top-level list/tuple to a cell array
+        for i = 1:numel(out)
+            if isa(out{i}, 'py.list') || isa(out{i}, 'py.tuple')
+                out{i} = pyList2cell(out{i}); % Recursively handle nested lists
+            elseif isa(out{i}, 'py.str')
+                % Convert Python string to MATLAB string
+                matlab_str = char(out{i});
+                
+                % Try to convert to number if possible
+                num_val = str2double(matlab_str);
+                if ~isnan(num_val)
+                    out{i} = num_val; % Use number if conversion succeeded
+                else
+                    out{i} = matlab_str; % Keep as string if not a number
+                end
+            end
+        end
+    end
+
     function skip_alignment_callback(~, ~)
         % skip the current stack
         skip_alignment = true;
@@ -196,8 +239,10 @@ function start_image_viewer(stack_paths)
 
         if exist(sprintf('%s//stack_info_%s.mat', parentDir, iteration), 'file')
             stack_info = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration));
+            while isfield(stack_info, 'stack_info')
+                stack_info = stack_info.stack_info;
+            end
             assignin('base', 'stack_info', stack_info);
-            stack_info = stack_info.stack_info;
         else
             img_data.img_files = dir(fullfile(path, '*.tif'));
             stack_info = initialize_stack_info(img_data);
@@ -245,6 +290,7 @@ function start_image_viewer(stack_paths)
         legend('x', 'y');
         axis(ax2, 'tight'); 
     end
+
     function align_stack_callback(varargin)
         skip_alignment = false;
         skip_button.Enable = 'on';
@@ -625,6 +671,7 @@ function start_image_viewer(stack_paths)
             display_warning(sprintf("Stack saved to %s//stack_info_%s.mat", parentDir, iteration));
             save_button.String = 'Save';
             stack_info = temp_stack_info;
+            assignin('base', 'stack_info', stack_info);
         end
     end
     function stack_info = initialize_stack_info(img_data)

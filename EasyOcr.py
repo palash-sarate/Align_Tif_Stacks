@@ -1,8 +1,8 @@
 # Import required libraries
 # import cv2
-import easyocr
+# import easyocr
 # import numpy as np
-import pandas as pd
+# import pandas as pd
 import requests
 # import base64
 # import gradio as gr
@@ -62,6 +62,6 @@ def ocr_from_file(image_path, roi):
 # ocr_from_file("C:\\Users\\Palash\\Desktop\\1_00002_med.tif",[])
 # print(f"Time taken: {time.time() - start_time} seconds")
 
-start_time = time.time()
-print(ocr_from_file("C:\\Users\\Palash\\Desktop\\1_00002.tif",[]))
-print(f"Time taken: {time.time() - start_time} seconds")
+# start_time = time.time()
+# print(ocr_from_file("C:\\Users\\Palash\\Desktop\\1_00002.tif",[]))
+# print(f"Time taken: {time.time() - start_time} seconds")
