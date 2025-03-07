@@ -9,8 +9,6 @@ end
 % start parallel pool
 % parpool(4);
 
-
-
 stack_paths = get_stack_paths();
 start_image_viewer(stack_paths);
 
@@ -168,18 +166,19 @@ function start_image_viewer(stack_paths)
         if ~isfield(stack_info, 'ocr_results')
             stack_info.ocr_results = cell(1, stack_info.img_data.num_imgs);            
         end
-        for i = 1:n:stack_info.img_data.num_imgs   
+        for i = 1:n:stack_info.img_data.num_imgs
+            disp(i)
             % skip if stack_info.ocr_results{i} already exists
             % if ~isempty(stack_info.ocr_results{i})
             %     continue;
             % end  
             py_results = get_time_ocr(i);
-            display_warning(sprintf("frame %d processed",i));
+            % display_warning(sprintf("frame %d processed",i));
             % convert results from python list to cell array
             results = pyList2cell(py_results);
             % add results to stack info 
             stack_info.ocr_results{i} = results;
-            assignin('base', 'ocr_results', stack_info.ocr_results);
+            % assignin('base', 'ocr_results', stack_info.ocr_results);
         end
         save_stack_callback();
         get_time.String = 'Get time';
@@ -204,7 +203,25 @@ function start_image_viewer(stack_paths)
             end
         end
     end
-
+    function plot_Gr(~,~)
+        % check if gr exists in stack_info
+        if ~isfield(stack_info, 'gr')
+            % get the particle location from the first image
+            img = stack_info.img_data.imgs{1};
+            % get the particle location
+            [x, y] = get_particle_locations(img);
+            stack_info.particle_locations = [x, y];
+            % calculate gr for the first image
+            gr = calculate_gr(img, x, y);
+            stack_info.gr = gr;
+            save_stack_callback();
+        end
+        % plot the gr
+        plot(ax2, stack_info.gr);
+        title('Radial distribution function');
+        xlabel('r');
+        ylabel('g(r)');
+    end
     function skip_alignment_callback(~, ~)
         % skip the current stack
         skip_alignment = true;

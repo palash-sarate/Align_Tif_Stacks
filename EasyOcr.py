@@ -42,13 +42,13 @@ def ocr_from_file(image_path, roi):
         status_data = status_response.json()
         if status_data.get('status') == 'COMPLETE':
             break
-        elif status_data.get('status') == 'PENDING':
+        elif status_data.get('status') == 'PENDING' or  status_data.get('status') == 'QUEUED':
             print('Task is still pending...')
         else:
             print('Task failed...')
             break
         time.sleep(1)
-
+    
     response_data = status_data["data"]["data"]
     ocr_results = response_data[1]["data"] 
     
@@ -63,5 +63,5 @@ def ocr_from_file(image_path, roi):
 # print(f"Time taken: {time.time() - start_time} seconds")
 
 # start_time = time.time()
-# print(ocr_from_file("C:\\Users\\Palash\\Desktop\\1_00002.tif",[]))
+# print(ocr_from_file("E:\\shake_table_data\\time_control\\1\\1_00002.tif",[]))
 # print(f"Time taken: {time.time() - start_time} seconds")
