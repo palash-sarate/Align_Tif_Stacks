@@ -5,6 +5,8 @@ clear;  % Erase all existing variables.
 if count(py.sys.path,pwd) == 0
     insert(py.sys.path,int32(0),pwd);
 end
+setenv('TCL_LIBRARY', 'C:/Python312/tcl/tcl8.6');
+setenv('TK_LIBRARY', 'C:/Python312/tcl/tk8.6');
 % workspace;  % Make sure the workspace panel is showing.
 % start parallel pool
 % parpool(4);
@@ -71,16 +73,18 @@ function start_image_viewer(stack_paths)
         'Callback', @open_directory_callback, 'Enable', 'on');
     drawMasks_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Draw mask', ...
         'Units', 'normalized','Position', [0.2 0.7 0.6 0.06], 'Callback', @draw_masks_callback, 'Enable', 'on');
-    deadZone_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Mark dead zone', ...
-        'Units', 'normalized','Position', [0.2 0.64 0.6 0.06], 'Callback', @mark_dead_zone_callback, 'Enable', 'on');
+    % deadZone_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Mark dead zone', ...
+    %     'Units', 'normalized','Position', [0.2 0.64 0.6 0.06], 'Callback', @mark_dead_zone_callback, 'Enable', 'on');
+    Gr_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Get Gr', ...
+        'Units', 'normalized','Position', [0.2 0.64 0.6 0.06], 'Callback', @get_Gr, 'Enable', 'on');
     shortenStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Shorten stack', ...
         'Units', 'normalized','Position', [0.2 0.58 0.6 0.06], 'Callback', @shorten_stack_callback, 'Enable', 'on');
     alignStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Align stack', ...
-        'Units', 'normalized','Position', [0.2 0.5 0.4 0.06], 'Callback', @align_stack_callback, 'Enable', 'on');
+        'Units', 'normalized','Position', [0.2 0.52 0.4 0.06], 'Callback', @align_stack_callback, 'Enable', 'on');
     alignAllStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Align all', ...
-        'Units', 'normalized','Position', [0.6 0.5 0.2 0.06], 'Callback', @align_all_stacks_callback, 'Enable', 'on');
+        'Units', 'normalized','Position', [0.6 0.52 0.2 0.06], 'Callback', @align_all_stacks_callback, 'Enable', 'on');
     logs_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Logs', ...
-        'Units', 'normalized','Position', [0.2 0.42 0.6 0.06], 'Callback', @show_logs_callback, 'Enable', 'on');
+        'Units', 'normalized','Position', [0.2 0.38 0.6 0.06], 'Callback', @show_logs_callback, 'Enable', 'on');
     save_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Save', ...
         'Units', 'normalized','Position', [0.2 0.32 0.6 0.06], 'Callback', @save_stack_callback, 'Enable', 'on');
     uicontrol(buttonPanel, 'Style', 'text', 'String', 'From Frame:', ...
@@ -120,11 +124,7 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized', 'Position', [0.65 0.87 0.1 0.04], 'String', '1');
     goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'load', ...
     'Units', 'normalized','Position', [0.77 0.87 0.15 0.04], 'Callback', @goto_callback);
-    get_time = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Get time', ...
-        'Units', 'normalized','Position', [0.2 0.1 0.6 0.06], 'Callback', @get_times, 'Enable', 'on');
-    % add forced checkbox beside get_time
-    forced_checkbox = uicontrol(buttonPanel, 'Style', 'checkbox', 'String', 'Forced', ...
-        'Units', 'normalized', 'Position', [0.8 0.1 0.2 0.06]);
+    get_time = [];path = [];
     % Create play/pause button beside the scrollbar
     play_icon = imread('./play.png');
     play_icon = imresize(play_icon, [40, 40]);
@@ -203,25 +203,37 @@ function start_image_viewer(stack_paths)
             end
         end
     end
-    function plot_Gr(~,~)
+    function get_Gr(~,~)
         % check if gr exists in stack_info
         if ~isfield(stack_info, 'gr')
             % get the particle location from the first image
             img = stack_info.img_data.imgs{1};
             % get the particle location
-            [x, y] = get_particle_locations(img);
-            stack_info.particle_locations = [x, y];
+            get_particle_locations(img);
+            % [x, y] = stack_info.particle_locations(:,1), stack_info.particle_locations(:,2);
             % calculate gr for the first image
-            gr = calculate_gr(img, x, y);
-            stack_info.gr = gr;
-            save_stack_callback();
+            % gr = calculate_gr(img, x, y);
+            % stack_info.gr = gr;
+            % save_stack_callback();
         end
         % plot the gr
-        plot(ax2, stack_info.gr);
-        title('Radial distribution function');
-        xlabel('r');
-        ylabel('g(r)');
+        % plot(ax2, stack_info.gr);
+        % title('Radial distribution function');
+        % xlabel('r');
+        % ylabel('g(r)');
     end
+
+    function get_particle_locations(image)
+        save_path = 'E:\shake_table_data\particle_locations\';
+        % get the particle locations from the image
+        py.track.find_particle_locations(image, diameter=[5, 5], max_iterations=10, minmass=1, separation=5, save_path=save_path);
+        % load the saved csv from save_path
+        particle_locations = readmatrix(save_path);
+        stack_info.particle_locations = particle_locations;
+        % save_stack_callback();
+        assignin('base', 'particle_locations', particle_locations);
+    end
+
     function skip_alignment_callback(~, ~)
         % skip the current stack
         skip_alignment = true;
@@ -250,6 +262,9 @@ function start_image_viewer(stack_paths)
     function load_images_callback(~, ~)
         current_idx = get(stack_dropdown, 'Value');
         path = stack_paths{current_idx};
+        % if path has time_control in it load the get_times button
+        toggle_get_time_ui();
+
         update_info(path);
         [iteration, parentDir] = getIteration(path);
         set(stack_label, 'String', sprintf('Stack #%d of %d', current_idx, length(stack_paths)));
@@ -438,13 +453,6 @@ function start_image_viewer(stack_paths)
         maxDiffIndex = find(differences == max(differences));
         stack_info.maxDiffIndex = maxDiffIndex;
         save_stack_callback();
-    end
-    function lastNonConstIndex = findLastNonConstIndex(arr)
-        displacements = stack_info.displacements;
-        displacements(:,1) = displacements(:,1) - displacements(end,1);
-        displacements(:,2) = displacements(:,2) - displacements(end,2);
-        % find the last non zero index
-        lastNonConstIndex = find(displacements(:,2), 1, 'last');
     end
     function [template,position] = getTemplate(mode, frame_num)
         % set slider to first image
@@ -784,4 +792,24 @@ function start_image_viewer(stack_paths)
         set(f_info, 'String', fs);
         set(i_info, 'String', iteration);
     end
+    function toggle_get_time_ui()
+        if contains(path, 'time_control')
+            get_time = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Get time', ...
+                'Units', 'normalized','Position', [0.2 0.1 0.6 0.06], 'Callback', @get_times, 'Enable', 'on');
+            % % add forced checkbox beside get_time
+            % uicontrol(buttonPanel, 'Style', 'checkbox', 'String', 'Forced', ...
+            %     'Units', 'normalized', 'Position', [0.8 0.1 0.2 0.06]);
+        else
+            if ~isempty(get_time)
+                delete(get_time);
+            end
+        end
+    end
+    % function lastNonConstIndex = findLastNonConstIndex(arr)
+    %     displacements = stack_info.displacements;
+    %     displacements(:,1) = displacements(:,1) - displacements(end,1);
+    %     displacements(:,2) = displacements(:,2) - displacements(end,2);
+    %     % find the last non zero index
+    %     lastNonConstIndex = find(displacements(:,2), 1, 'last');
+    % end
 end
