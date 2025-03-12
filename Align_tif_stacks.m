@@ -1,5 +1,7 @@
 clc;
 close all;
+clear all;  % Clear cached classes
+
 imtool close all;  % Close all imtool figures.
 clear;  % Erase all existing variables.
 if count(py.sys.path,pwd) == 0
@@ -76,7 +78,9 @@ function start_image_viewer(stack_paths)
     % deadZone_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Mark dead zone', ...
     %     'Units', 'normalized','Position', [0.2 0.64 0.6 0.06], 'Callback', @mark_dead_zone_callback, 'Enable', 'on');
     Gr_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Get Gr', ...
-        'Units', 'normalized','Position', [0.2 0.64 0.6 0.06], 'Callback', @get_Gr, 'Enable', 'on');
+        'Units', 'normalized','Position', [0.2 0.64 0.4 0.06], 'Callback', @get_Gr, 'Enable', 'on');
+    Gr_AllStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Get all', ...
+        'Units', 'normalized','Position', [0.6 0.64 0.2 0.06], 'Callback', @Gr_all_stacks_callback, 'Enable', 'on');
     shortenStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Shorten stack', ...
         'Units', 'normalized','Position', [0.2 0.58 0.6 0.06], 'Callback', @shorten_stack_callback, 'Enable', 'on');
     alignStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Align stack', ...
@@ -203,35 +207,136 @@ function start_image_viewer(stack_paths)
             end
         end
     end
+    
     function get_Gr(~,~)
+        radius = 15 * 5;
+        start = stack_info.start_index;
+        image_path = fullfile(stack_info.img_data.img_files(start).folder, stack_info.img_data.img_files(start).name);
+        [iter, parentDir] = getIteration(path);
+        save_path = fullfile(parentDir, sprintf('particle_locations_%s.csv', iter));
+        % if save_path doesn't exist, get the particle locations from the first image
+        if ~isfile(save_path)
+            disp('getting particle locations');
+            get_particle_locations(image_path, save_path);
+        end
+
         % check if gr exists in stack_info
         if ~isfield(stack_info, 'gr')
-            % get the particle location from the first image
-            img = stack_info.img_data.imgs{1};
-            % get the particle location
-            get_particle_locations(img);
-            % [x, y] = stack_info.particle_locations(:,1), stack_info.particle_locations(:,2);
+            disp('calculating gr');
             % calculate gr for the first image
-            % gr = calculate_gr(img, x, y);
-            % stack_info.gr = gr;
-            % save_stack_callback();
+            bin_width = 10;
+            calculate_gr(radius, bin_width);
+            % assignin('base', 'gr', gr);
         end
         % plot the gr
-        % plot(ax2, stack_info.gr);
-        % title('Radial distribution function');
-        % xlabel('r');
-        % ylabel('g(r)');
+        plot_gr(iter, parentDir);
+    end
+    function all_distances = calculate_all_distances(locations)
+        x_gpu = gpuArray(locations.x);
+        y_gpu = gpuArray(locations.y);
+        n_particles = size(locations, 1);
+        % Pre-allocate distances array in GPU memory
+        all_distances = zeros(n_particles*(n_particles-1)/2, 1, 'gpuArray');
+        % calculate all distances if not already calculated
+        disp('calculating distances');
+        % Create indices for vectorized distance calculation
+        idx = 1;
+        for i = 1:n_particles-1
+            % Calculate distances between particle i and all particles j>i
+            dx = x_gpu(i) - x_gpu(i+1:end);
+            dy = y_gpu(i) - y_gpu(i+1:end);
+            
+            % Calculate Euclidean distances
+            d = sqrt(dx.^2 + dy.^2);
+            
+            % Store in the pre-allocated array
+            n_dists = length(d);
+            all_distances(idx:idx+n_dists-1) = d;
+            idx = idx + n_dists;
+        end
+    end
+    function gr = calculate_gr(r_max, dr)
+        % calculate the radial distribution function
+        % get the particle locations
+        % gr = py.track.calculate_rdf(particles_path, r_max=r_max, dr=dr);
+        particle_locations = stack_info.particle_locations;
+        % calculate all distances if not already calculated
+        if ~isfield(stack_info, 'distances')
+            disp('calculating distances');
+            distances = calculate_all_distances(particle_locations);
+            stack_info.distances = distances;
+        else 
+            distances = stack_info.distances;
+        end
+        % bins
+        bins = 0:1:r_max;
+        % calculate the histogram
+        disp('calculating radial distribution function');
+        % # find box corners
+        xmin = int32(min(particle_locations.x));
+        xmax = int32(max(particle_locations.x));
+        ymin = int32(min(particle_locations.y));
+        ymax = int32(max(particle_locations.y));
+        % Measure distances for uniform, random distribution (no correlations)
+        % (number of points/particles is unimportant.)
+        x = randi([xmin, xmax], 4000, 1);
+        y = randi([ymin, ymax], 4000, 1);
+        uniform_distances = calculate_all_distances(table(x, y));
+        % Option 1: Fast histogram approach (slightly less precise)
+        [counts, ~] = histcounts(distances, bins);
+        [uniform_counts, ~] = histcounts(uniform_distances, bins);
+
+        gr = counts ./ uniform_counts;
+        % Option 2: For precise window counting (if dr != bin width/2)
+        % if dr ~= 0.5  % Only use this if dr is not half the bin width
+        %     gr = zeros(1, numel(bins)-1, 'gpuArray');
+        %     for i = 1:numel(bins)-1
+        %         bin_center = (bins(i) + bins(i+1))/2;
+        %         % Count elements in range [bin_center-dr, bin_center+dr]
+        %         in_range = (all_distances >= bin_center-dr) & (all_distances < bin_center+dr);
+        %         gr(i) = sum(in_range);
+        %     end
+        %     gr = gather(gr / (n_particles * (n_particles - 1)));
+        % end
+        stack_info.gr = gr;
+        stack_info.gr_bins = bins;
+        save_stack_callback();
+    end
+    function plot_gr(iter, parentDir)
+        % clear axis
+        cla(ax2);
+        % plot the gr on ax2
+        plot(ax2, stack_info.gr_bins(1:end-1), stack_info.gr);
+        title('Radial distribution function');
+        xlabel('r');
+        ylabel('g(r)');
+        axis(ax2, 'tight');
+        % save the plot
+        temp = figure(visible='off');
+        plot(stack_info.gr_bins(1:end-1), stack_info.gr);
+        title('Radial distribution function');
+        xlabel('r');
+        ylabel('g(r)');
+        saveas(temp, fullfile(parentDir, sprintf('gr_%s.png', iter)));
+        close(temp);
+    end
+    function Gr_all_stacks_callback(~,~)
+        % iterate over all the stacks
+        for i = 1:length(stack_paths)
+            set(stack_dropdown, 'Value', i);
+            load_images_callback();
+            get_Gr('mode', 'auto');
+        end
     end
 
-    function get_particle_locations(image)
-        save_path = 'E:\shake_table_data\particle_locations\';
+    function get_particle_locations(image_path, save_path)
         % get the particle locations from the image
-        py.track.find_particle_locations(image, diameter=[5, 5], max_iterations=10, minmass=1, separation=5, save_path=save_path);
+        py.track.find_particle_locations(image_path=image_path, diam=int32(5), max_iterations=int32(10), minmass=int32(1), separation=int32(5), save_path=save_path);
         % load the saved csv from save_path
-        particle_locations = readmatrix(save_path);
+        particle_locations = readtable(save_path);
         stack_info.particle_locations = particle_locations;
-        % save_stack_callback();
-        assignin('base', 'particle_locations', particle_locations);
+        save_stack_callback();
+        % assignin('base', 'particle_locations', particle_locations);
     end
 
     function skip_alignment_callback(~, ~)
@@ -312,7 +417,7 @@ function start_image_viewer(stack_paths)
         plot(ax2, displacements(:,2), 'b');
         % draw vertical lines at start and end indices
         if stack_info.shortened == true
-            disp(stack_info.start_index);
+            % disp(stack_info.start_index);
             plot(ax2, stack_info.start_index, [-5, 5], 'g');
             plot(ax2, stack_info.end_index, [-5, 5], 'g');
         end
@@ -764,17 +869,17 @@ function start_image_viewer(stack_paths)
             display_warning("You're on the last stack");
         end
     end
-    function mark_dead_zone_callback(~,~)
-        % get the start and end frame of the dead timeline and save it in the stack_info
-        display_warning("Select the start frame of the dead timeline");
-        wait_for_keypress("n");
-        start_frame = round(get(slider, 'Value'));
-        display_warning("Select the end frame of the dead timeline");
-        wait_for_keypress("n");
-        end_frame = round(get(slider, 'Value'));   
-        stack_info.dead_zone = [start_frame, end_frame];
-        save_stack_callback();
-    end
+    % function mark_dead_zone_callback(~,~)
+    %     % get the start and end frame of the dead timeline and save it in the stack_info
+    %     display_warning("Select the start frame of the dead timeline");
+    %     wait_for_keypress("n");
+    %     start_frame = round(get(slider, 'Value'));
+    %     display_warning("Select the end frame of the dead timeline");
+    %     wait_for_keypress("n");
+    %     end_frame = round(get(slider, 'Value'));   
+    %     stack_info.dead_zone = [start_frame, end_frame];
+    %     save_stack_callback();
+    % end
     function [N, fs] = get_info(path)
         if isa(path, 'char')
             path = string(path);
