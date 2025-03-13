@@ -15,6 +15,11 @@ setenv('TK_LIBRARY', 'C:/Python312/tcl/tk8.6');
 
 stack_paths = get_stack_paths();
 start_image_viewer(stack_paths);
+% TODO: Time stamp
+% TODO: Gr for each N
+% TODO: Provision to combine stacks
+% TODO: Time stamp from OCR
+% TODO: 
 
 function stack_paths = get_stack_paths()
     % directory of the tif stacks
@@ -25,6 +30,7 @@ function stack_paths = get_stack_paths()
     deg = 60;
     wd = 10;
     stack_paths = [];
+    fps = 47;
 
     for n = 1:length(Ns)
         for freq = 1:length(fs)
@@ -87,6 +93,12 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized','Position', [0.2 0.52 0.4 0.06], 'Callback', @align_stack_callback, 'Enable', 'on');
     alignAllStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Align all', ...
         'Units', 'normalized','Position', [0.6 0.52 0.2 0.06], 'Callback', @align_all_stacks_callback, 'Enable', 'on');
+
+    timestampStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Timestamp stack', ...
+    'Units', 'normalized','Position', [0.2 0.46 0.4 0.06], 'Callback', @timestamp_stack, 'Enable', 'on');
+    timestampAllStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Do all', ...
+        'Units', 'normalized','Position', [0.6 0.46 0.2 0.06], 'Callback', @timestamp_all_stack, 'Enable', 'on');
+
     logs_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Logs', ...
         'Units', 'normalized','Position', [0.2 0.38 0.6 0.06], 'Callback', @show_logs_callback, 'Enable', 'on');
     save_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Save', ...
@@ -121,9 +133,9 @@ function start_image_viewer(stack_paths)
     uicontrol(buttonPanel, 'Style', 'text', 'String', 'Iter:', ...
         'Units', 'normalized', 'Position', [0.4 0.82 0.4 0.08]);
     N_info = uicontrol(buttonPanel, 'Style', 'edit', ...
-        'Units', 'normalized', 'Position', [0.15 0.87 0.1 0.04], 'String', '1');
+        'Units', 'normalized', 'Position', [0.15 0.87 0.1 0.04], 'String', '4');
     f_info = uicontrol(buttonPanel, 'Style', 'edit', ...
-        'Units', 'normalized', 'Position', [0.4 0.87 0.1 0.04], 'String', '1');
+        'Units', 'normalized', 'Position', [0.4 0.87 0.1 0.04], 'String', '14');
     i_info = uicontrol(buttonPanel, 'Style', 'edit', ...
         'Units', 'normalized', 'Position', [0.65 0.87 0.1 0.04], 'String', '1');
     goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'load', ...
@@ -145,6 +157,61 @@ function start_image_viewer(stack_paths)
     logs = {}; % Initialize logs list
     stack_info = struct();
     skip_alignment = false;
+    goto_callback();
+    function timestamp = get_binary_timestamp(image_idx)
+        valid_years = [2023, 2024, 2025]; % List of valid years
+        img_path = fullfile(stack_info.img_data.img_files(image_idx).folder, ...
+                            stack_info.img_data.img_files(image_idx).name);
+        % Try to decode the timestamp
+        try
+            timestamp = py.pco.decode_timestamp(img_path);
+            % convert timestamp from py.dict to matlab struct
+            timestamp = structfun(@double, struct(timestamp), 'UniformOutput', false);
+            valid_timestamp = ismember(timestamp.YYYY, valid_years) && ...
+                                timestamp.MM >= 1 && timestamp.MM <= 12 && ...
+                                timestamp.DD >= 1 && timestamp.DD <= 31 && ...
+                                timestamp.h >= 0 && timestamp.h <= 23 && ...
+                                timestamp.min >= 0 && timestamp.min <= 59 && ...
+                                timestamp.s >= 0 && timestamp.s <= 59 && ...
+                                timestamp.us >= 0 && timestamp.us <= 999999;
+            % Format timestamp for display
+            % timestamp_str = sprintf('#%d %04d-%02d-%02d %02d:%02d:%02d.%06d', ...
+            %     timestamp.number, timestamp.YYYY, timestamp.MM, timestamp.DD, ...
+            %     timestamp.h, timestamp.min, timestamp.s, timestamp.us);          
+        catch
+            display_warning('Failed to decode timestamp. Not a valid binary timestamp image.');
+        end
+        
+        if ~valid_timestamp
+            timestamp = [];
+        end
+    end
+    function timestamp_stack(~,~)
+        if ~isfield(stack_info, 'timestamps')
+            stack_info.timestamps = cell(1, stack_info.img_data.num_imgs);
+        end
+        WaitMessage = parfor_wait(stack_info.img_data.num_imgs, 'Waitbar', true);
+        for i = 1:stack_info.img_data.num_imgs
+            timestamp = get_binary_timestamp(i);
+            if ~isempty(timestamp)
+                stack_info.timestamps{i} = timestamp;
+                WaitMessage.Send;
+            else
+                % if one time stamp is invalid, then binary stamps don't exist
+                break;
+            end
+        end
+        save_stack_callback();
+        WaitMessage.Destroy;
+    end
+    function timestamp_all_stacks(~,~)
+        for i = 1:length(stack_paths)
+            set(stack_dropdown, 'Value', i);
+            load_images_callback();
+            timestamp_stack();
+        end
+    end
+
     function ocr_results = get_time_ocr(k)
         % get the time from the image
         slider_idx = k;
@@ -612,6 +679,19 @@ function start_image_viewer(stack_paths)
         else
             imshow(stack_info.img_data.imgs{image_idx}, 'Parent', ax1);
         end
+        if isfield(stack_info, 'timestamps')
+            timestamp = stack_info.timestamps{image_idx};
+            if ~isempty(timestamp)
+                % draw the timestamp on the image
+                text(ax1, 'Units', 'normalized', 'Position', [0.99, 0.03], ...
+                    'String', sprintf("%.2f Sec", ...
+                    time_2_sec(timestamp)-time_2_sec(stack_info.timestamps{1})), ...
+                    'Color', 'red', 'FontSize', 18, 'HorizontalAlignment', 'right');
+            end
+        end
+    end
+    function secs = time_2_sec(timestamp)
+        secs = timestamp.min * 60 + timestamp.s + timestamp.us / 1e6;
     end
     function show_logs_callback(~, ~)
         % Create a new figure for the logs overlay
@@ -729,7 +809,7 @@ function start_image_viewer(stack_paths)
         slider_callback(slider);  % call the slider's callback function to update the display
     end
     function slider_callback(~, ~)
-        if(stack_info.img_data.num_imgs == 0)
+        if ~evalin('base', 'exist(''stack_info'', ''var'')')
             display_warning("load some images first");
         else        
             % Get the current slider value
@@ -823,7 +903,12 @@ function start_image_viewer(stack_paths)
                 logs{end+1} = sprintf("Trial %s already aligned",stack_paths(i));
                 continue;
             end
-            align_stack_callback('mode', 'auto');
+            if contains(path, 'time_control')
+                stack_info.aligned = true;
+                save_stack_callback();
+                continue;
+            end
+            align_stack_callback('mode', 'auto');          
         end
     end
     function open_directory_callback(~, ~)

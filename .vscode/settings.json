@@ -20,6 +20,7 @@
         "ischar",
         "isfield",
         "isfile",
+        "ismember",
         "keypress",
         "keypressed",
         "minmass",
