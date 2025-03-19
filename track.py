@@ -62,14 +62,14 @@ def calculate_rdf(particles_path, r_max=100, dr=1):
 #%%
 # test the function
 # image = 'E:\\shake_table_data\\N4\\4hz_hopperflow\\60deg\\10cm\\2\\1_00001.TIF'
-particle_radius = 15
-particles_path = "E:\\shake_table_data\\N4\\4hz_hopperflow\\60deg\\10cm\\particle_locations_1.csv"
-rdf = calculate_rdf(particles_path, r_max=8*particle_radius, dr=particle_radius/2)
-# # Display the located particles
-plt.figure()
-# tp.annotate(particles, image, plot_style={'markersize': 1.3})
-rs = rdf[0]
-g = rdf[1]
-plt.plot(rs[1:]/particle_radius, g)
-plt.show()
+# particle_radius = 15
+# particles_path = "E:\\shake_table_data\\N4\\4hz_hopperflow\\60deg\\10cm\\particle_locations_1.csv"
+# rdf = calculate_rdf(particles_path, r_max=8*particle_radius, dr=particle_radius/2)
+# # # Display the located particles
+# plt.figure()
+# # tp.annotate(particles, image, plot_style={'markersize': 1.3})
+# rs = rdf[0]
+# g = rdf[1]
+# plt.plot(rs[1:]/particle_radius, g)
+# plt.show()
 # %%

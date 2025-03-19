@@ -50,8 +50,10 @@
         "waitbar",
         "warndlg",
         "winopen",
+        "xlabel",
         "xoff",
         "xpeak",
+        "ylabel",
         "yoff",
         "ypeak"
     ]
