@@ -16,10 +16,10 @@ setenv('TK_LIBRARY', 'C:/Python312/tcl/tk8.6');
 stack_paths = get_stack_paths();
 start_image_viewer(stack_paths);
 % TODO: Time stamp
-% TODO: Plot Gr for each N
 % TODO: Provision to combine stacks
 % TODO: Time stamp from OCR
 % TODO: Plot all timestamps
+% TODO: 
 
 function stack_paths = get_stack_paths()
     % directory of the tif stacks
@@ -100,7 +100,7 @@ function start_image_viewer(stack_paths)
     timestampStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Timestamp stack', ...
     'Units', 'normalized','Position', [0.2 0.46 0.4 0.06], 'Callback', @timestamp_stack, 'Enable', 'on');
     timestampAllStack_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Do all', ...
-        'Units', 'normalized','Position', [0.6 0.46 0.2 0.06], 'Callback', @timestamp_all_stack, 'Enable', 'on');
+        'Units', 'normalized','Position', [0.6 0.46 0.2 0.06], 'Callback', @timestamp_all_stacks, 'Enable', 'on');
 
     logs_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Logs', ...
         'Units', 'normalized','Position', [0.2 0.38 0.6 0.06], 'Callback', @show_logs_callback, 'Enable', 'on');
@@ -143,7 +143,7 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized', 'Position', [0.65 0.87 0.1 0.04], 'String', '1');
     goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'load', ...
     'Units', 'normalized','Position', [0.77 0.87 0.15 0.04], 'Callback', @goto_callback);
-    function_list = {'Change Drive', 'Plot all Gr'};
+    function_list = {'Change Drive', 'Plot all Gr', 'Plot all TimeStamps'};
     function_dropdown = uicontrol(buttonPanel, 'Style', 'popupmenu', ...
         'String', function_list, ...
         'Units', 'normalized', 'Position', [0.2 0.04 0.6 0.06]);
@@ -162,9 +162,12 @@ function start_image_viewer(stack_paths)
     pause_icon = imresize(pause_icon, [40, 40]);
     play_pause_button = uicontrol(axesPanel, 'Style', 'pushbutton', 'Units', 'normalized', ...
         'Position', [0.01 0.06 0.08 0.08], 'CData', play_icon, 'Callback', @play_pause_callback);
+    speeds = {1,2,4,8};
+    speed_dropdown = uicontrol(axesPanel, 'Style', 'popupmenu', 'String', speeds, ...
+        'Units', 'normalized', 'Position', [0.01 0.001 0.08 0.08], 'Callback', @set_speed_callback);
     is_playing = false;
     play_timer = timer('ExecutionMode', 'fixedRate', 'Period', 0.1, 'TimerFcn', @play_timer_callback);
-   
+    speed = 1;
     % Create indicators for aligned and shortened statuses
     aligned_indicator = create_indicator(buttonPanel, [0 0.8 0.3 0.05], "Aligned", @remove_alignment_callback);
     shortened_indicator = create_indicator(buttonPanel, [0.5 0.8 0.3 0.05], "Shortened", @remove_shortening_callback);
@@ -172,18 +175,28 @@ function start_image_viewer(stack_paths)
     stack_info = struct();
     skip_alignment = false;
     goto_callback();
+    function set_speed_callback(~,~)
+        speed_idx = get(speed_dropdown, 'Value');
+        speed = speeds{speed_idx};
+    end
     function validity = isValidTimeStamp(timestamp)
         valid_years = [2023, 2024, 2025]; % List of valid years
-        validity = ismember(timestamp.YYYY, valid_years) && ...
-            timestamp.MM >= 1 && timestamp.MM <= 12 && ...
-            timestamp.DD >= 1 && timestamp.DD <= 31 && ...
-            timestamp.h >= 0 && timestamp.h <= 23 && ...
-            timestamp.min >= 0 && timestamp.min <= 59 && ...
-            timestamp.s >= 0 && timestamp.s <= 59 && ...
-            timestamp.us >= 0 && timestamp.us <= 999999;
+        validity = isfield(timestamp, 'YYYY') && isfield(timestamp, 'MM') && ...
+            isfield(timestamp, 'DD') && isfield(timestamp, 'h') && ...
+            isfield(timestamp, 'min') && isfield(timestamp, 's') && ...
+            isfield(timestamp, 'us');
+        if validity
+            validity = ismember(timestamp.YYYY, valid_years) && ...
+                timestamp.MM >= 1 && timestamp.MM <= 12 && ...
+                timestamp.DD >= 1 && timestamp.DD <= 31 && ...
+                timestamp.h >= 0 && timestamp.h <= 23 && ...
+                timestamp.min >= 0 && timestamp.min <= 59 && ...
+                timestamp.s >= 0 && timestamp.s <= 59 && ...
+                timestamp.us >= 0 && timestamp.us <= 999999;
+        end
     end
     function timestamp = get_binary_timestamp(image_idx)
-        disp(image_idx);
+        % disp(image_idx);
         img_path = fullfile(stack_info.img_data.img_files(image_idx).folder, ...
                             stack_info.img_data.img_files(image_idx).name);
         % Try to decode the timestamp
@@ -220,13 +233,15 @@ function start_image_viewer(stack_paths)
         WaitMessage.Destroy;
     end
     function timestamp_all_stacks(~,~)
+        WaitMessage = parfor_wait(length(stack_paths), 'Waitbar', true);
         for i = 1:length(stack_paths)
             set(stack_dropdown, 'Value', i);
             load_images_callback();
             timestamp_stack();
+            WaitMessage.Send;
         end
+        WaitMessage.Destroy;
     end
-
     function ocr_results = get_time_ocr(k)
         % get the time from the image
         slider_idx = k;
@@ -289,7 +304,6 @@ function start_image_viewer(stack_paths)
             end
         end
     end
-    
     function get_Gr(~,~)
         radius = 15 * 5;
         start = stack_info.start_index;
@@ -416,7 +430,6 @@ function start_image_viewer(stack_paths)
             get_Gr('mode', 'auto');
         end
     end
-
     function get_particle_locations(image_path, save_path)
         % get the particle locations from the image
         py.track.find_particle_locations(image_path=image_path, diam=int32(5), max_iterations=int32(10), minmass=int32(1), separation=int32(5), save_path=save_path);
@@ -426,7 +439,6 @@ function start_image_viewer(stack_paths)
         save_stack_callback();
         % assignin('base', 'particle_locations', particle_locations);
     end
-
     function skip_alignment_callback(~, ~)
         % skip the current stack
         skip_alignment = true;
@@ -499,6 +511,18 @@ function start_image_viewer(stack_paths)
         WaitMessage.Send;
         fprintf('Loaded stack %s\n', path);
         WaitMessage.Destroy;
+    end
+    function load_stack_info(~,~)
+        current_idx = get(stack_dropdown, 'Value');
+        path = stack_paths{current_idx};
+        [iteration, parentDir] = getIteration(path);
+
+        if exist(sprintf('%s//stack_info_%s.mat', parentDir, iteration), 'file')
+            stack_info = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration));
+            while isfield(stack_info, 'stack_info')
+                stack_info = stack_info.stack_info;
+            end
+        end
     end
     function plot_displacements()
         displacements = stack_info.displacements;
@@ -696,10 +720,8 @@ function start_image_viewer(stack_paths)
         % if aligned displacements exist, apply them to the image
         if stack_info.aligned == true
             displaced_img = imtranslate(stack_info.img_data.imgs{image_idx}, - stack_info.displacements(image_idx, :));
-            if isfield(stack_info, 'masked')
-                if stack_info.masked == true
-                    displaced_img = imoverlay(displaced_img, stack_info.mask, 'r');
-                end
+            if isfield(stack_info, 'masked') && stack_info.masked == true && isfield(stack_info, 'mask')
+                displaced_img = imoverlay(displaced_img, stack_info.mask, 'r');
             end 
             imshow(displaced_img, 'Parent', ax1);
         else
@@ -994,11 +1016,12 @@ function start_image_viewer(stack_paths)
             set(play_pause_button, 'CData', pause_icon);
         end
         is_playing = ~is_playing;
+        % fprintf('speed is : %d', speed);
     end
     function play_timer_callback(~, ~)
         current_value = get(slider, 'Value');
         if current_value < get(slider, 'Max')
-            set(slider, 'Value', current_value + 1);
+            set(slider, 'Value', current_value + speed);
             slider_callback(slider);
         else
             stop(play_timer);
@@ -1096,6 +1119,8 @@ function start_image_viewer(stack_paths)
             % You can add more functions as needed
             case 'Plot all Gr'
                 plot_all_gr();
+            case 'Plot all TimeStamps'
+                plot_all_timestamps();
         end
         
         display_warning(['Executed: ' selected_function]);
@@ -1134,7 +1159,7 @@ function start_image_viewer(stack_paths)
                 gr_bins = gr_all_stacks.(sprintf('N%d', N)).(sprintf('F%d', fs)).(sprintf('Iter%s', iteration)).('gr_bins');
             else
                 if exist(sprintf('%s//stack_info_%s.mat', parentDir, iteration), 'file')
-                    load_images_callback();
+                    load_stack_info();
                     if isfield(stack_info, 'gr')
                         fprintf('gr data found in stack_info for %s\n', path);
                         % add the data to gr_all_stacks
@@ -1173,6 +1198,57 @@ function start_image_viewer(stack_paths)
         % save the gr_all_stacks
         save('F:\shake_table_data\Results\gr_all_stacks.mat', 'gr_all_stacks');
     end
+    function plot_all_timestamps(~,~)
+        Ns = [];
+        % check if struct with gr of all stacks exists at F:\shake_table_data\Results
+        if exist('F:\shake_table_data\Results\timestamp_all_stacks.mat', 'file')
+            timestamp_all_stacks = load('F:\shake_table_data\Results\timestamp_all_stacks.mat');
+            while isfield(timestamp_all_stacks, 'timestamp_all_stacks')
+                timestamp_all_stacks = timestamp_all_stacks.timestamp_all_stacks;
+            end
+        else
+            timestamp_all_stacks = struct();
+        end
+        % clear axis
+        cla(ax2);hold on;
+        WaitMessage = parfor_wait(length(stack_paths), 'Waitbar', true);
+        % iterate over all the stacks
+        for i = 1:length(stack_paths)
+            set(stack_dropdown, 'Value', i);
+            current_idx = get(stack_dropdown, 'Value');
+            path = stack_paths{current_idx};
+            [iteration, parentDir] = getIteration(path);
+            [N, fs] = get_info(path);
+            Ns = [Ns, N];
+            if contains(path, 'time_control') || contains(path, 'temp')
+                fprintf('Skipping %s\n', path);           
+                continue;
+            end
+            if isfield(timestamp_all_stacks, sprintf('N%d', N)) && ...
+                    isfield(timestamp_all_stacks.(sprintf('N%d', N)), sprintf('F%d', fs)) && ...
+                    isfield(timestamp_all_stacks.(sprintf('N%d', N)).(sprintf('F%d', fs)), sprintf('Iter%s', iteration))
+                fprintf('Timestamps found in timestamp_all_stacks for %s\n', path);
+                timestamps = timestamp_all_stacks.(sprintf('N%d', N)).(sprintf('F%d', fs)).(sprintf('Iter%s', iteration)).('timestamps');                ;
+            else
+                fprintf('Timestamps not found in timestamp_all_stacks for %s\n now checking stack_info\n', path);
+                if exist(sprintf('%s//stack_info_%s.mat', parentDir, iteration), 'file')
+                    load_stack_info();
+                    if isfield(stack_info, 'timestamps') && isValidTimeStamp(stack_info.timestamps{1})
+                        timestamps = stack_info.timestamps;
+                        timestamp_all_stacks.(sprintf('N%d', N)).(sprintf('F%d', fs)).(sprintf('Iter%s', iteration)).('timestamps') = timestamps;
+                        fprintf('Timestamps found in stack_info for %s\n plotting in colour %s', path,mat2str(get_color(N, [4,12,24,48])));
+                    end
+                else
+                    fprintf('Timestamps not found in stack_info for %s\n', path);
+                end
+            end
+            plot(ax2, cellfun(@(t) t.time_us, timestamps) - timestamps{1}.time_us, 'Color', get_color(N, [4,12,24,48]), 'DisplayName', 'None');
+            WaitMessage.Send;
+        end
+        % save the gr_all_stacks
+        save('F:\shake_table_data\Results\timestamp_all_stacks.mat', 'timestamp_all_stacks');
+        WaitMessage.Destroy;
+    end
     % function to return a unique color from jet colormap for each N
     function color = get_color(N, Ns)
         % get the number of unique Ns
@@ -1182,6 +1258,7 @@ function start_image_viewer(stack_paths)
         % get the color from the jet colormap
         color = jet(numel(unique_Ns));
         color = color(idx, :);
+        % fprintf('Color for N = %d is %s\n', N, mat2str(color));
     end
     % function mark_dead_zone_callback(~,~)
     %     % get the start and end frame of the dead timeline and save it in the stack_info
