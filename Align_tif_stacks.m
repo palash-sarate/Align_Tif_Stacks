@@ -57,7 +57,7 @@ end
 function start_image_viewer(stack_paths)
     close all;
     % Create figure and panel on it
-    f = figure('Name', 'Simple Image Viewer', 'NumberTitle', 'Off','WindowState','maximized', 'WindowScrollWheelFcn', @scrollWheelMoved);
+    f = figure('Name', 'Stack Viewer', 'NumberTitle', 'Off','WindowState','maximized', 'WindowScrollWheelFcn', @scrollWheelMoved);
     % Create panels on the figure
     buttonPanel = uipanel(f, 'Units', 'normalized', 'Position', [0 0 0.2 1]); % [left bottom width height]
     axesPanel = uipanel(f, 'Units', 'normalized', 'Position', [0.2 0 0.8 1]);
@@ -103,9 +103,9 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized','Position', [0.6 0.46 0.2 0.06], 'Callback', @timestamp_all_stacks, 'Enable', 'on');
 
     logs_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Logs', ...
-        'Units', 'normalized','Position', [0.2 0.38 0.6 0.06], 'Callback', @show_logs_callback, 'Enable', 'on');
+        'Units', 'normalized','Position', [0.51 0.32 0.3 0.06], 'Callback', @show_logs_callback, 'Enable', 'on');
     save_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'Save', ...
-        'Units', 'normalized','Position', [0.2 0.32 0.6 0.06], 'Callback', @save_stack_callback, 'Enable', 'on');
+        'Units', 'normalized','Position', [0.2 0.32 0.3 0.06], 'Callback', @save_stack_callback, 'Enable', 'on');
     uicontrol(buttonPanel, 'Style', 'text', 'String', 'From Frame:', ...
         'Units', 'normalized', 'Position', [0.1 0.22 0.4 0.08]);    %[left bottom width height]
     uicontrol(buttonPanel, 'Style', 'text', 'String', 'To Frame:', ...
@@ -143,7 +143,7 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized', 'Position', [0.65 0.87 0.1 0.04], 'String', '1');
     goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'load', ...
     'Units', 'normalized','Position', [0.77 0.87 0.15 0.04], 'Callback', @goto_callback);
-    function_list = {'Change Drive', 'Plot all Gr', 'Plot all TimeStamps'};
+    function_list = {'Change Drive', 'Plot all Gr', 'Plot all TimeStamps', 'Get Scales'};
     function_dropdown = uicontrol(buttonPanel, 'Style', 'popupmenu', ...
         'String', function_list, ...
         'Units', 'normalized', 'Position', [0.2 0.04 0.6 0.06]);
@@ -160,11 +160,16 @@ function start_image_viewer(stack_paths)
     play_icon = imresize(play_icon, [40, 40]);
     pause_icon = imread('./pause.png');
     pause_icon = imresize(pause_icon, [40, 40]);
+    particle_icon = imread('./particles_icon.png');
+    particle_icon = imresize(particle_icon, [40, 40]);
     play_pause_button = uicontrol(axesPanel, 'Style', 'pushbutton', 'Units', 'normalized', ...
         'Position', [0.01 0.06 0.08 0.08], 'CData', play_icon, 'Callback', @play_pause_callback);
     speeds = {1,2,4,8};
     speed_dropdown = uicontrol(axesPanel, 'Style', 'popupmenu', 'String', speeds, ...
         'Units', 'normalized', 'Position', [0.01 0.001 0.08 0.08], 'Callback', @set_speed_callback);
+    particle_button = uicontrol(axesPanel, 'Style', 'pushbutton', 'CData', particle_icon, ...
+        'Units', 'normalized','Position', [0 0.95 0.04 0.05], 'Callback', @toggle_particle_locations);
+    particle_locations_visible = false;
     is_playing = false;
     play_timer = timer('ExecutionMode', 'fixedRate', 'Period', 0.1, 'TimerFcn', @play_timer_callback);
     speed = 1;
@@ -175,6 +180,104 @@ function start_image_viewer(stack_paths)
     stack_info = struct();
     skip_alignment = false;
     goto_callback();
+    function get_scales(~,~)
+        for i = 1:1%length(stack_paths)
+            set(stack_dropdown, 'Value', i);
+            load_images_callback();
+            if isfield(stack_info, 'scale')
+                fprintf('Scales already exist for stack %s\n', path);
+                continue;
+            end
+            get_scale(2);
+        end
+        % average the scales
+        % scales = cell2mat(stack_info.scales);
+        % avg_scale = mean(scales);
+        % stack_info.scale = avg_scale;
+        % save_stack_callback();
+    end
+    function get_scale(n)
+        % set the viewer to first image
+        setFrame(1);
+        fprintf('Getting scales for stack %s\n', path);
+        % get the particle locations
+        particle_locations = stack_info.particle_locations;
+        % zoom onto 10 particles selected randomly from the image
+        for i = 1:n
+            % get the particle location
+            x = particle_locations.x(randi(size(particle_locations, 1)));
+            y = particle_locations.y(randi(size(particle_locations, 1)));
+            set(gcf, 'WindowScrollWheelFcn', {@zoom_callback,x,y});
+            % zoom onto the particle
+            xlim(ax1, [x - 50, x + 50]);
+            ylim(ax1, [y - 50, y + 50]);
+            % highlight the particle
+            hold(ax1, 'on');
+            plot(ax1, x, y, 'r*');
+            hold(ax1, 'off');
+            % get the scale from the user by asking to draw a circle around the particle
+            h = drawcircle(ax1, 'Center', [x, y], 'Radius', 10);
+            wait(h);
+            % save the circle to the stack_info
+            % add the scale to the stack_info
+            if ~isfield(stack_info, 'radii')
+                stack_info.radii = {};
+            end
+            stack_info.radii{end+1} = {h.Center, h.Radius};
+        end
+        % enable the scroll callback
+        set(gcf, 'WindowScrollWheelFcn', @scrollWheelMoved);
+        % save the stack_info
+        assignin('base', 'stack_info', stack_info);
+        % save_stack_callback();
+    end
+    function toggle_particle_locations(~,~)
+        if particle_locations_visible
+            % hide the particle locations
+            particle_locations_visible = false;
+            % get slider index
+            slider_idx = round(get(slider, 'Value'));
+            setFrame(slider_idx);
+            set(gcf, 'WindowScrollWheelFcn', @scrollWheelMoved);
+        else
+            % show the particle locations
+            if ~isfield(stack_info, 'particle_locations')
+                display_warning('No particle locations found');
+                return;
+            end
+            particle_locations_visible = true;
+            setFrame(1);
+            % get the particle locations
+            particle_locations = stack_info.particle_locations;
+            hold(ax1, 'on');
+            plot(ax1, particle_locations.x, particle_locations.y, 'b*');
+            hold(ax1, 'off');
+            set(gcf, 'WindowScrollWheelFcn', {});
+        end
+    end
+    % function to zoom in and out at x,y with scroll
+    function zoom_callback(~, event,x,y)
+        % Get the scroll direction
+        if event.VerticalScrollCount > 0
+            % Zoom in
+            zoomFactor = 1.1;
+        else
+            % Zoom out
+            zoomFactor = 1/1.1;
+        end
+        % Get the current limits
+        xLim = xlim(ax1);
+        yLim = ylim(ax1);
+        % Get the current point
+        % x = event.IntersectionPoint(1);
+        % y = event.IntersectionPoint(2);
+        % Calculate the new limits
+        xLim = (xLim - x) * zoomFactor + x;
+        yLim = (yLim - y) * zoomFactor + y;
+        % Set the new limits
+        xlim(ax1, xLim);
+        ylim(ax1, yLim);
+    end
     function set_speed_callback(~,~)
         speed_idx = get(speed_dropdown, 'Value');
         speed = speeds{speed_idx};
@@ -1121,6 +1224,8 @@ function start_image_viewer(stack_paths)
                 plot_all_gr();
             case 'Plot all TimeStamps'
                 plot_all_timestamps();
+            case 'Get Scales'
+                get_scales();
         end
         
         display_warning(['Executed: ' selected_function]);
