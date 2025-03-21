@@ -1,7 +1,10 @@
 classdef app 
     properties
-        stack_info
+        stack_paths
+        ui
         utils
+        
+        stack_info
         Gr_module
         forced
         speed
@@ -15,8 +18,11 @@ classdef app
             obj.Gr_module = Gr_module(stack_info);
             obj.forced = false;
             obj.speed = 1;
-            obj.speeds = {1,2,4,8};            
+            obj.speeds = {1,2,4,8};
+            obj.stack_paths = get_stack_paths();
+            obj.ui = ui_builder();
         end
+
         function obj = forced_callback(obj, ~, ~)
             obj.forced = ~obj.forced;
         end
