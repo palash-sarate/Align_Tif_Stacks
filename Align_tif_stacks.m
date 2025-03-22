@@ -18,8 +18,8 @@ start_image_viewer(stack_paths);
 % TODO: Time stamp
 % TODO: Provision to combine stacks
 % TODO: Time stamp from OCR
-% TODO: Plot all timestamps
-% TODO: 
+% TODO: get all scales
+% TODO: get new Gr for all stacks
 
 function stack_paths = get_stack_paths()
     % directory of the tif stacks
@@ -181,20 +181,26 @@ function start_image_viewer(stack_paths)
     skip_alignment = false;
     goto_callback();
     function get_scales(~,~)
-        for i = 1:1%length(stack_paths)
+        num_particles_to_check = 5;
+        for i = 1:length(stack_paths)
+            if contains(stack_paths{i}, 'time_control') || contains(stack_paths{i}, 'temp') || contains(stack_paths{i}, 'cont')
+                continue;
+            end
             set(stack_dropdown, 'Value', i);
             load_images_callback();
             if isfield(stack_info, 'scale')
                 fprintf('Scales already exist for stack %s\n', path);
                 continue;
             end
-            get_scale(2);
+            get_scale(num_particles_to_check);
+            % average the stack_info.radii
+            radii_values = cellfun(@(x) x{2}, stack_info.radii);
+            avg_radius = mean(radii_values);
+            std_radius = std(radii_values);
+            stack_info.scale = 2 * avg_radius;
+            stack_info.scale_std = std_radius;
+            save_stack_callback();
         end
-        % average the scales
-        % scales = cell2mat(stack_info.scales);
-        % avg_scale = mean(scales);
-        % stack_info.scale = avg_scale;
-        % save_stack_callback();
     end
     function get_scale(n)
         % set the viewer to first image
@@ -204,19 +210,22 @@ function start_image_viewer(stack_paths)
         particle_locations = stack_info.particle_locations;
         % zoom onto 10 particles selected randomly from the image
         for i = 1:n
+            random_index = randi(size(particle_locations, 1));
             % get the particle location
-            x = particle_locations.x(randi(size(particle_locations, 1)));
-            y = particle_locations.y(randi(size(particle_locations, 1)));
+            x = particle_locations.x(random_index);
+            y = particle_locations.y(random_index);
+            radius = particle_locations.size(random_index) * 3;
             set(gcf, 'WindowScrollWheelFcn', {@zoom_callback,x,y});
             % zoom onto the particle
             xlim(ax1, [x - 50, x + 50]);
             ylim(ax1, [y - 50, y + 50]);
+
             % highlight the particle
             hold(ax1, 'on');
             plot(ax1, x, y, 'r*');
             hold(ax1, 'off');
             % get the scale from the user by asking to draw a circle around the particle
-            h = drawcircle(ax1, 'Center', [x, y], 'Radius', 10);
+            h = drawcircle(ax1, 'Center', [x, y], 'Radius', radius);
             wait(h);
             % save the circle to the stack_info
             % add the scale to the stack_info
@@ -225,11 +234,13 @@ function start_image_viewer(stack_paths)
             end
             stack_info.radii{end+1} = {h.Center, h.Radius};
         end
+        % delete the circle
+        delete(h);
+        % reset the zoom
+        % zoom(ax1,'reset');
         % enable the scroll callback
         set(gcf, 'WindowScrollWheelFcn', @scrollWheelMoved);
-        % save the stack_info
-        assignin('base', 'stack_info', stack_info);
-        % save_stack_callback();
+        % assignin('base', 'stack_info', stack_info);
     end
     function toggle_particle_locations(~,~)
         if particle_locations_visible
