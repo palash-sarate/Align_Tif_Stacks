@@ -143,7 +143,7 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized', 'Position', [0.65 0.87 0.1 0.04], 'String', '1');
     goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'load', ...
     'Units', 'normalized','Position', [0.77 0.87 0.15 0.04], 'Callback', @goto_callback);
-    function_list = {'Change Drive', 'Plot all Gr', 'Plot all TimeStamps', 'Get Scales'};
+    function_list = {'Change Drive', 'Plot all Gr', 'Plot all TimeStamps', 'Get Scales','Plot scales'};
     function_dropdown = uicontrol(buttonPanel, 'Style', 'popupmenu', ...
         'String', function_list, ...
         'Units', 'normalized', 'Position', [0.2 0.04 0.6 0.06]);
@@ -164,6 +164,8 @@ function start_image_viewer(stack_paths)
     particle_icon = imresize(particle_icon, [40, 40]);
     play_pause_button = uicontrol(axesPanel, 'Style', 'pushbutton', 'Units', 'normalized', ...
         'Position', [0.01 0.06 0.08 0.08], 'CData', play_icon, 'Callback', @play_pause_callback);
+    forced_checkbox = uicontrol(buttonPanel, 'Style', 'checkbox', 'String', 'Forced', ...
+        'Units', 'normalized', 'Position', [0.8 0.7 0.2 0.06], 'Callback', @forced_callback, 'Enable', 'on');
     speeds = {1,2,4,8};
     speed_dropdown = uicontrol(axesPanel, 'Style', 'popupmenu', 'String', speeds, ...
         'Units', 'normalized', 'Position', [0.01 0.001 0.08 0.08], 'Callback', @set_speed_callback);
@@ -179,7 +181,11 @@ function start_image_viewer(stack_paths)
     logs = {}; % Initialize logs list
     stack_info = struct();
     skip_alignment = false;
+    forced = false;
     goto_callback();
+    function forced_callback(~, ~)
+        forced = ~forced;
+    end
     function get_scales(~,~)
         num_particles_to_check = 5;
         for i = 1:length(stack_paths)
@@ -190,7 +196,10 @@ function start_image_viewer(stack_paths)
             load_images_callback();
             if isfield(stack_info, 'scale')
                 fprintf('Scales already exist for stack %s\n', path);
-                continue;
+                if ~forced
+                    fprintf('Skipping stack %s\n', path);
+                    continue;
+                end
             end
             get_scale(num_particles_to_check);
             % average the stack_info.radii
@@ -201,6 +210,47 @@ function start_image_viewer(stack_paths)
             stack_info.scale_std = std_radius;
             save_stack_callback();
         end
+    end
+    function plot_scales()
+        scales = zeros(1, length(stack_paths));
+        sizes = zeros(1, length(stack_paths));
+        scales_std = zeros(1, length(stack_paths));
+        sizes_std = zeros(1, length(stack_paths));
+        % check if csv already exists
+        if isfile('F:\shake_table_data\Results\scales.csv')
+            data = readmatrix('F:\shake_table_data\Results\scales.csv');
+            scales = data(:,1);
+            scales_std = data(:,2);
+            sizes = data(:,3);
+            sizes_std = data(:,4);
+        else
+            for i = 1:length(stack_paths)
+                if contains(stack_paths{i}, 'time_control') || contains(stack_paths{i}, 'temp') || contains(stack_paths{i}, 'cont')
+                    continue;
+                end
+                set(stack_dropdown, 'Value', i);
+                load_images_callback();
+                if isfield(stack_info, 'scale')                
+                    scales(i) = stack_info.scale;
+                    scales_std(i) = stack_info.scale_std;
+                end
+                sizes(i) = mean(stack_info.particle_locations.size);
+                sizes_std(i) = std(stack_info.particle_locations.size);
+            end
+        end
+        cla(ax2);
+        errorbar(ax2, scales,scales_std, 'b', 'LineWidth', 2);
+        hold(ax2, 'on');
+        errorbar(ax2, sizes * 3 * 2,sizes_std, 'g', 'LineWidth', 2);
+        hold(ax2, 'off');
+        title('Scales and particle sizes');
+        xlabel('Stack number');
+        ylabel('Scale');
+        % save data to csv
+        data = [scales; scales_std; sizes; sizes_std];
+        data = data';
+        writematrix(data, 'F:\shake_table_data\Results\scales.csv');
+        saveas(gcf, 'F:\shake_table_data\Results\scales.png');
     end
     function get_scale(n)
         % set the viewer to first image
@@ -1237,6 +1287,8 @@ function start_image_viewer(stack_paths)
                 plot_all_timestamps();
             case 'Get Scales'
                 get_scales();
+            case 'Plot scales'
+                plot_scales();
         end
         
         display_warning(['Executed: ' selected_function]);
