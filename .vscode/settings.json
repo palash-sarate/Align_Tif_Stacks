@@ -2,10 +2,12 @@
     "cSpell.words": [
         "assignin",
         "cellfun",
+        "copyfile",
         "disp",
         "drawpolygon",
         "drawrectangle",
         "easyocr",
+        "fieldnames",
         "fprintf",
         "fullfile",
         "histcounts",
@@ -36,8 +38,10 @@
         "PYTHONUNBUFFERED",
         "readtable",
         "readtext",
+        "saveas",
         "sprintf",
         "sscanf",
+        "Steinhardt",
         "strcmp",
         "Streamlit",
         "strjoin",
@@ -61,5 +65,6 @@
         "ylabel",
         "yoff",
         "ypeak"
-    ]
+    ],
+    "python.defaultInterpreterPath": "python"
 }

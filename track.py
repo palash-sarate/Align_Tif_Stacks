@@ -59,6 +59,8 @@ def calculate_rdf(particles_path, r_max=100, dr=1):
     # Calculate the RDF
     rdf = tp.pair_correlation_2d(particles, cutoff=r_max, dr=dr)
     return rdf
+
+
 #%%
 # test the function
 # image = 'E:\\shake_table_data\\N4\\4hz_hopperflow\\60deg\\10cm\\2\\1_00001.TIF'
