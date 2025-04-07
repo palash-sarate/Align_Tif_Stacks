@@ -1,74 +1,75 @@
+stack_info = load("F:\shake_table_data\N4\4hz_hopperflow\60deg\10cm\stack_info_1.mat");
+while isfield(stack_info, 'stack_info')
+    stack_info = stack_info.stack_info;
+end
+%%
+bd = stack_info.bd;
+r_cut = 2 * bd;
+m = 6;
+pos = [stack_info.particle_locations.x, stack_info.particle_locations.y];
 
-center = [1,1];
-radius = 10;
-thickness = 2;
-masked_image = stack_info.mask;
-mask_value = 1;
+% localOrderParameter computes the local bond-orientational order parameter.
+%
+%   psi = localOrderParameter(pos, m) computes the order parameter for
+%   each particle given in pos (an N-by-2 array of [x,y] positions) using the
+%   symmetry index m. For instance, use m = 4 for square symmetry or m = 6 for
+%   triangular (hexagonal) symmetry.
+%
+%   psi = localOrderParameter(pos, m, r_cut) only considers neighbors that are
+%   within the distance r_cut.
+%
+%   The local order parameter for particle i is defined as:
+%       psi_m(i) = | (1/N_i) * sum_{j in neighbors(i)} exp( i*m*theta_ij ) |
+%   where theta_ij is the angle between the vector (pos(j,:) - pos(i,:)) and the x-axis.
+%
+%   Example:
+%       % pos: N-by-2 array of particle coordinates
+%       psi_top = localOrderParameter(pos(pos(:,2)>y_thresh,:), 4);
+%       psi_bottom = localOrderParameter(pos(pos(:,2)<=y_thresh,:), 6);
+%
+%   See also delaunayTriangulation, atan2.
+%
 
-% Get image dimensions
-[height, width] = size(masked_image);
+useCutoff = true;
 
-% Extract center coordinates
-center_row = center(1);
-center_col = center(2);
+% Create a Delaunay triangulation from the particle positions.
+dt = delaunayTriangulation(pos(:,1), pos(:,2));
 
-% Calculate inner and outer radius
-inner_radius = max(0, radius - thickness);
-outer_radius = radius + thickness;
+% For each particle, find the indices of attached triangles (neighbors)
+attachList = vertexAttachments(dt);
 
-% Calculate the theoretical area of the complete circular ring
-% Area = π(R₂² - R₁²)
-theoretical_ring_area = pi * (outer_radius^2 - inner_radius^2);
+N = size(pos,1);
+psi = zeros(N,1);
 
-% Create a large enough grid to cover the entire ring (ignoring image boundaries)
-row_min = floor(center_row - outer_radius);
-row_max = ceil(center_row + outer_radius);
-col_min = floor(center_col - outer_radius);
-col_max = ceil(center_col + outer_radius);
-
-% Create coordinate matrices for the full theoretical ring
-[cols, rows] = meshgrid(col_min:col_max, row_min:row_max);
-
-% Calculate distances from the center for all points
-dist_from_center = sqrt((rows - center_row).^2 + (cols - center_col).^2);
-
-% Create a mask for the full circular ring
-ring_mask = (dist_from_center >= inner_radius) & (dist_from_center <= outer_radius);
-
-% Create a mask for points that are inside the image boundaries
-valid_rows = (rows >= 1) & (rows <= height);
-valid_cols = (cols >= 1) & (cols <= width);
-inside_image_mask = valid_rows & valid_cols;
-
-% Count pixels in the theoretical complete ring
-total_ring_pixels = sum(ring_mask(:));
-
-% For pixels inside both the ring and image boundaries, check if they're masked
-valid_points = ring_mask & inside_image_mask;
-
-% Initialize a counter for unmasked pixels
-unmasked_count = 0;
-
-% Get linear indices of points inside both ring and image
-[valid_row_indices, valid_col_indices] = find(valid_points);
-
-% Check each valid point against the mask
-for i = 1:length(valid_row_indices)
-    img_row = valid_row_indices(i) + row_min - 1;  % Convert back to image coordinates
-    img_col = valid_col_indices(i) + col_min - 1;
+for i = 1:N
+    % Extract the indices of triangles attached to particle i
+    triIndices = attachList{i};
+    % Get all vertices from these triangles
+    nb = unique(dt.ConnectivityList(triIndices,:));
+    % Remove the particle itself from its neighbor list
+    nb(nb == i) = [];
     
-    % Check if this point is not masked
-    if masked_image(img_row, img_col) ~= mask_value
-        unmasked_count = unmasked_count + 1;
+    % If a cutoff distance is provided, filter the neighbors by distance.
+    if useCutoff && ~isempty(nb)
+        distances = sqrt(sum((pos(nb,:) - pos(i,:)).^2, 2));
+        nb = nb(distances <= r_cut);
     end
+    
+    % If no neighbors are found, set order parameter to NaN.
+    if isempty(nb)
+        psi(i) = NaN;
+        continue;
+    end
+    
+    % Calculate the angle between particle i and each of its neighbors.
+    angles = atan2(pos(nb,2) - pos(i,2), pos(nb,1) - pos(i,1));
+    
+    % Compute the local order parameter for particle i.
+    psi(i) = abs(sum(exp(1i*m*angles)) / numel(angles));
 end
 
-% Calculate percentage: (unmasked pixels) / (total theoretical ring pixels) * 100
-if total_ring_pixels > 0
-    percentage = (unmasked_count / total_ring_pixels) * 100;
-else
-    percentage = 0;
-end
-
- 
-
+%% Plot histogram of psi
+histogram(psi, 'Normalization', 'probability');
+xlabel('\psi');
+ylabel('Probability');
+title('Histogram of \psi');

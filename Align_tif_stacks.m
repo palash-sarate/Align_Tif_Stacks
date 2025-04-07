@@ -1,7 +1,7 @@
 clc;
 close all;
 clear all;  % Clear cached classes
-
+% pyenv('Version', 'F:\shake_table_data\Align_Tif_Stacks\.conda\python.exe');
 imtool close all;  % Close all imtool figures.
 clear;  % Erase all existing variables.
 if count(py.sys.path,pwd) == 0
@@ -164,8 +164,9 @@ function start_image_viewer(stack_paths)
         'Units', 'normalized', 'Position', [0.65 0.87 0.1 0.04], 'String', '1');
     goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'load', ...
     'Units', 'normalized','Position', [0.77 0.87 0.15 0.04], 'Callback', @goto_callback);
-    function_list = {'Change Drive', 'Plot all Gr', 'Plot all TimeStamps', 'Get Scales','Plot scales'...
-        'Local number density','Average timeStamps','Combine stacks','Plot durations','Set all Empty or Not'};
+    function_list = {'Change Drive', 'Plot all Gr', 'Plot all TimeStamps', 'Get Scales','Plot scales',...
+        'Local number density','Average timeStamps','Combine stacks','Plot durations','Set all Empty or Not',...
+        'Find all nhood', 'Find all Si6'};
     function_dropdown = uicontrol(buttonPanel, 'Style', 'popupmenu', ...
         'String', function_list, ...
         'Units', 'normalized', 'Position', [0.2 0.04 0.6 0.06]);
@@ -254,7 +255,7 @@ function start_image_viewer(stack_paths)
         fprintf('Loaded stack %s\n', path);
         WaitMessage.Destroy;
     end
-%%%%%%%%%%%%%%%%%%%%%%%% SCALE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%% SCALE %%%%%%%%%%%%%%%%%%%%%%%%%%%
     function get_scales(~,~)
         num_particles_to_check = 5;
         for i = 1:length(stack_paths)
@@ -710,49 +711,200 @@ function start_image_viewer(stack_paths)
     function secs = time_2_sec(timestamp)
         secs = timestamp.h * 3600 + timestamp.min * 60 + timestamp.s + timestamp.us / 1e6;
     end
-%%%%%%%%%%%%%%%%%%%%%% TRIAL CHARACTERIZATION %%%%%%%%%%%%%%%%%%%%%%%%%%
- function is_late = is_rec_start_late(n,fs,iter)
-    % ignore list (48,10,2)(12,14,3)(24,12,1) - first frame is false
-    % return true is n,fs,iter is in the ignore list
-    ignore_list = {[48,10,"2"],[12,14,"3"],[24,12,"1"]};
-    is_late = false;
-    % fprintf('Checking %d,%d,%s\n',n,fs,iter);
-    if any(cellfun(@(x) isequal([n, fs, iter], x), ignore_list))
-        % fprintf('Ignoring %d,%d,%s\n',n,fs,iter);
-        is_late = true;
-    end
- end
-%  function to loop over all stack and set if the stack emptied fully or not
-% should load the stack and go to the last frame and provide option to user to 
-% state whether the hopper has emptied or not
-function set_all_empty_or_not()
-    % loop over all stacks and set the emptyornot field in stack_info
-    % WaitMessage = parfor_wait(length(stack_paths), 'Waitbar', true);
-    for i = 1:length(stack_paths)
-        set(stack_dropdown, 'Value', i);
-        path = stack_paths{i};
-        % [N, fs] = get_info(path);
-        % [iteration, ~] = getIteration(path);
-        if contains(path, 'time_control') || contains(path, 'temp')
-            fprintf('Skipping %s\n', path);           
-            continue;
-        end
-        load_images_callback();
-        setFrame(stack_info.end_index - stack_info.start_index + 1);
-        % show dialog box to user to set the emptyornot field
-        options = {'Empty', 'Not Empty'};
-        answer = questdlg('Is the hopper empty?', 'Empty or Not', options{1}, options{2}, options{1});
-        if strcmp(answer, options{1})
-            stack_info.empty = true;
-        else
-            stack_info.empty = false;
-        end
-        save_stack_callback();
-        % WaitMessage.Send;
-    end
-    % WaitMessage.Destroy;
-end
 
+%%%%%%%%%%%%%%%%%%%%%% TRIAL CHARACTERIZATION %%%%%%%%%%%%%%%%%%%%%%%%%%
+    function is_late = is_rec_start_late(n,fs,iter)
+        % ignore list (48,10,2)(12,14,3)(24,12,1) - first frame is false
+        % return true is n,fs,iter is in the ignore list
+        ignore_list = {[48,10,"2"],[12,14,"3"],[24,12,"1"]};
+        is_late = false;
+        % fprintf('Checking %d,%d,%s\n',n,fs,iter);
+        if any(cellfun(@(x) isequal([n, fs, iter], x), ignore_list))
+            % fprintf('Ignoring %d,%d,%s\n',n,fs,iter);
+            is_late = true;
+        end
+    end
+    function set_all_empty_or_not()
+        % function to loop over all stack and set if the stack emptied fully or not
+        % should load the stack and go to the last frame and provide option to user to 
+        % state whether the hopper has emptied or not
+        % loop over all stacks and set the emptyornot field in stack_info
+        % WaitMessage = parfor_wait(length(stack_paths), 'Waitbar', true);
+        for i = 1:length(stack_paths)
+            set(stack_dropdown, 'Value', i);
+            path = stack_paths{i};
+            % [N, fs] = get_info(path);
+            % [iteration, ~] = getIteration(path);
+            if contains(path, 'time_control') || contains(path, 'temp')
+                fprintf('Skipping %s\n', path);           
+                continue;
+            end
+            load_images_callback();
+            setFrame(stack_info.end_index - stack_info.start_index + 1);
+            % show dialog box to user to set the emptyornot field
+            options = {'Empty', 'Not Empty'};
+            answer = questdlg('Is the hopper empty?', 'Empty or Not', options{1}, options{2}, options{1});
+            if strcmp(answer, options{1})
+                stack_info.empty = true;
+            else
+                stack_info.empty = false;
+            end
+            save_stack_callback();
+            % WaitMessage.Send;
+        end
+        % WaitMessage.Destroy;
+    end
+
+%%%%%%%%%%%%%%%%%%%%%% LOCAL ORDER PARAMETER %%%%%%%%%%%%%%%%%%%%%%%%%%
+    function psi = localOrderParameter(pos, m, r_cut)
+        % localOrderParameter computes the local bond-orientational order parameter.
+        %
+        %   psi = localOrderParameter(pos, m) computes the order parameter for
+        %   each particle given in pos (an N-by-2 array of [x,y] positions) using the
+        %   symmetry index m. For instance, use m = 4 for square symmetry or m = 6 for
+        %   triangular (hexagonal) symmetry.
+        %
+        %   psi = localOrderParameter(pos, m, r_cut) only considers neighbors that are
+        %   within the distance r_cut.
+        %
+        %   The local order parameter for particle i is defined as:
+        %       psi_m(i) = | (1/N_i) * sum_{j in neighbors(i)} exp( i*m*theta_ij ) |
+        %   where theta_ij is the angle between the vector (pos(j,:) - pos(i,:)) and the x-axis.
+        %
+        %   Example:
+        %       % pos: N-by-2 array of particle coordinates
+        %       psi_top = localOrderParameter(pos(pos(:,2)>y_thresh,:), 4);
+        %       psi_bottom = localOrderParameter(pos(pos(:,2)<=y_thresh,:), 6);
+        %
+        %   See also delaunayTriangulation, atan2.
+        %
+        
+        if nargin < 2
+            error('You must provide at least the positions and symmetry parameter m.');
+        end
+        
+        % Optional neighbor cutoff: if not provided, use all neighbors from the triangulation.
+        if nargin < 3
+            useCutoff = false;
+        else
+            useCutoff = true;
+        end
+        
+        % Create a Delaunay triangulation from the particle positions.
+        dt = delaunayTriangulation(pos(:,1), pos(:,2));
+        
+        % For each particle, find the indices of attached triangles (neighbors)
+        attachList = vertexAttachments(dt);
+        
+        N = size(pos,1);
+        psi = zeros(N,1);
+        
+        for i = 1:N
+            % Extract the indices of triangles attached to particle i
+            triIndices = attachList{i};
+            % Get all vertices from these triangles
+            nb = unique(dt.ConnectivityList(triIndices,:));
+            % Remove the particle itself from its neighbor list
+            nb(nb == i) = [];
+            
+            % If a cutoff distance is provided, filter the neighbors by distance.
+            if useCutoff && ~isempty(nb)
+                distances = sqrt(sum((pos(nb,:) - pos(i,:)).^2, 2));
+                nb = nb(distances <= r_cut);
+            end
+            
+            % If no neighbors are found, set order parameter to NaN.
+            if isempty(nb)
+                psi(i) = NaN;
+                continue;
+            end
+            
+            % Calculate the angle between particle i and each of its neighbors.
+            angles = atan2(pos(nb,2) - pos(i,2), pos(nb,1) - pos(i,1));
+            
+            % Compute the local order parameter for particle i.
+            psi(i) = abs(sum(exp(1i*m*angles)) / numel(angles));
+        end 
+    end
+    function psi = freudLocalOrderParameter(particles_path, bead_dia, l, nhood)
+        psi = py.track.compute_ql(particles_path, bead_dia, int32(l), int32(nhood));
+        % convert psi from python ndarray to matlab array
+        psi = double(py.array.array('d', py.numpy.nditer(psi)));
+    end
+    % function to find the nhood where psi meand and std stabilise
+    function find_nhood()
+        L = 6;
+        nhood_values = [4, 6, 8, 10 , 12, 14, 16];
+        colors = mat2cell(jet(length(nhood_values)), ones(1, length(nhood_values)), 3);
+        cla(ax2);
+        for i = 1:length(nhood_values)
+            nhood = nhood_values(i);
+            % get the psi for the current nhood
+            [iter, parentDir] = getIteration(path);
+            particles_path = fullfile(parentDir, sprintf('particle_locations_%s.csv', iter));
+            if ~isfile(particles_path)
+                fprintf('Particle locations not found for stack %s\n', path);
+                continue;
+            end
+            psi = freudLocalOrderParameter(particles_path, stack_info.bd, L, nhood);
+            % plot the mean and std of psi
+            mean_psi = mean(psi);
+            std_psi = std(psi);
+            % check if mean and std are stable
+            if i > 1 && abs(mean_psi - mean_psi_prev) < 0.01 && abs(std_psi - std_psi_prev) < 0.01
+                fprintf('Stable psi found for nhood = %d\n', nhood);
+                break;
+            end
+            mean_psi_prev = mean_psi;
+            std_psi_prev = std_psi;
+            % plot the psi histogram on ax2
+            histogram(ax2, psi, 'Normalization', 'pdf', 'FaceColor', colors{i}, 'EdgeColor', 'none', 'FaceAlpha', 0.5);
+            hold(ax2, 'on');
+        end
+        stack_info.nhood = nhood;
+        save_stack_callback();
+        % save the ax2
+        exportgraphics(ax2, fullfile(parentDir, sprintf('nhood_vs_psi_%s.png', iter)));
+    end
+    function find_all_nhood()
+        for i = 1:length(stack_paths)
+            set(stack_dropdown, 'Value', i);
+            path = stack_paths{i};
+            if contains(path, 'time_control') || contains(path, 'temp')
+                fprintf('Skipping %s\n', path);           
+                continue;
+            end
+            load_stack_info();
+            find_nhood();
+        end
+    end
+    function find_all_psi()
+        % iterate over all the stacks
+        for i = 1:length(stack_paths)
+            set(stack_dropdown, 'Value', i);
+            path = stack_paths{i};
+            if contains(path, 'time_control') || contains(path, 'temp')
+                fprintf('Skipping %s\n', path);           
+                continue;
+            end
+            load_stack_info();
+            [iter, parentDir] = getIteration(path);
+            particles_path = fullfile(parentDir, sprintf('particle_locations_%s.csv', iter));
+            if ~isfile(particles_path)
+                fprintf('Particle locations not found for stack %s\n', path);
+                continue;
+            end
+            bead_dia = stack_info.bd;
+            nhood = stack_info.nhood;
+            l = 6;
+            psi = freudLocalOrderParameter(particles_path, bead_dia, l, nhood);
+            stack_info.(sprintf("psi_%d",l)) = psi;
+            % save the psi to the stack_info
+            % assignin('base', 'stack_info', stack_info);
+            save_stack_callback();
+            fprintf('Psi calculated for stack %s\n', path);
+        end
+    end
 %%%%%%%%%%%%%%%%%%%%%% GR %%%%%%%%%%%%%%%%%%%%%%%%%%%
     function Gr_all_stacks_callback(~,~)
         % iterate over all the stacks
@@ -1700,6 +1852,10 @@ end
                 plot_stack_durations();
             case 'Set all Empty or Not'
                 set_all_empty_or_not();
+            case 'Find all nhood'
+                find_all_nhood();
+            case 'Find all Si6'
+                find_all_psi();
         end
         
         display_warning(['Executed: ' selected_function]);
