@@ -1,4 +1,4 @@
-clc;
+% clc;
 close all;
 clear all;  % Clear cached classes
 % pyenv('Version', 'F:\shake_table_data\Align_Tif_Stacks\.conda\python.exe');
@@ -165,7 +165,7 @@ function start_image_viewer(stack_paths)
     goto_button = uicontrol(buttonPanel, 'Style', 'pushbutton', 'String', 'load', ...
     'Units', 'normalized','Position', [0.77 0.87 0.15 0.04], 'Callback', @goto_callback);
     function_list = {'Change Drive', 'Plot all Gr', 'Plot all TimeStamps', 'Get Scales','Plot scales',...
-        'Local number density','Average timeStamps','Combine stacks','Plot durations','Set all Empty or Not',...
+        'Local number density','Average timeStamps','Combine stacks','Plot durations','Set all Empty or Not','Set all Jam or Not'...
         'Find all nhood', 'Find all Si6'};
     function_dropdown = uicontrol(buttonPanel, 'Style', 'popupmenu', ...
         'String', function_list, ...
@@ -206,6 +206,7 @@ function start_image_viewer(stack_paths)
     skip_alignment = false;
     forced = false;
     % goto_callback();
+    % plot_stack_durations();
 
     function load_images_callback(~, ~)
         WaitMessage = parfor_wait(4, 'Waitbar', true);
@@ -546,6 +547,29 @@ function start_image_viewer(stack_paths)
             end
         end
     end
+    function value = get_jammed_or_flows(N, f, iter)
+        persistent data;
+        % load data if its not already loaded
+        if isempty(data)
+                xl_path = "F:\shake_table_data\Results\Results.xlsx";
+                % load the excel file
+                opts = detectImportOptions(xl_path,VariableNamesRange="A1:L1",VariableNamingRule="preserve");
+                opts.VariableTypes = repmat("string",1,numel(opts.VariableTypes));
+                data = readtable(xl_path, opts);
+                % data = data(:,[2,4,6,7]);
+        end
+        % get the jammed or flows from the data
+        % get the value of 7th column where value of 2nd column is N, 4th column is f and 6th column is iter
+        % Ensure N, f, and iter are strings to match the table column types
+        value = data{strcmp(data{:, 2}, N) & strcmp(data{:, 3}, f) & strcmp(data{:, 6}, iter), 7};
+        if value == "jammed"
+            value = 1;
+        elseif value == "flows"
+            value = 0;
+        else
+            value = -1;
+        end
+    end
     function plot_all_timestamps(~,~)
         Ns = [];
         % check if struct with gr of all stacks exists at F:\shake_table_data\Results
@@ -567,6 +591,7 @@ function start_image_viewer(stack_paths)
             path = stack_paths{current_idx};
             [iteration, parentDir] = getIteration(path);
             [N, fs] = get_info(path);
+            fprintf("jammed : %d\n",jammed);
             Ns = [Ns, N];
             if contains(path, 'time_control') || contains(path, 'temp')
                 fprintf('Skipping %s\n', path);           
@@ -673,6 +698,7 @@ function start_image_viewer(stack_paths)
             path = stack_paths{current_idx};
             [iteration, ~] = getIteration(path);
             [N, fs] = get_info(path);
+            jammed = get_jammed_or_flows(sprintf("%d",N),sprintf("%d",fs),iteration);
             if contains(path, 'time_control') || contains(path, 'temp')
                 fprintf('Skipping %s\n', path);           
                 continue;
@@ -682,7 +708,11 @@ function start_image_viewer(stack_paths)
                     isfield(stack_durations.(sprintf('N%d', N)).(sprintf('F%d', fs)), sprintf('Iter%s', iteration))
                 fprintf('Duration found in stack_durations for %s\n', path);
                 duration = stack_durations.(sprintf('N%d', N)).(sprintf('F%d', fs)).(sprintf('Iter%s', iteration));
-                plot(ax2, fs, duration, get_marker(N), 'Color', get_color(N),'HandleVisibility','off');
+                scatter(ax2, fs, duration, get_marker(N), 'MarkerFaceColor', get_color(N), 'MarkerEdgeColor', get_color(N),'HandleVisibility','off');
+                if jammed == 1
+                    % add transparent yellow circle at same location
+                    scatter(ax2, fs, duration,40, get_marker(N), 'MarkerEdgeColor', 'yellow', 'LineWidth', 2, 'HandleVisibility', 'off');
+                end
             else
                 fprintf('Duration not found in stack_durations for %s\n', path);
             end
@@ -694,7 +724,7 @@ function start_image_viewer(stack_paths)
         for j = 1:numel(unique_Ns)
             N_val = unique_Ns(j);
             % Create a "dummy" line just for the legend with the right color
-            legend_handles(j) = plot(ax2, NaN, NaN, get_marker(N_val), 'Color', get_color(N_val));
+            legend_handles(j) = scatter(ax2, NaN, NaN, get_marker(N_val), 'MarkerFaceColor', get_color(N_val), 'MarkerEdgeColor',get_color(N_val));
             legend_entries{j} = sprintf('N = %d', N_val);
         end
         
@@ -754,7 +784,35 @@ function start_image_viewer(stack_paths)
         end
         % WaitMessage.Destroy;
     end
-
+    function set_all_jam_or_not()
+        for i = 1:length(stack_paths)
+            set(stack_dropdown, 'Value', i);
+            path = stack_paths{i};
+            [N, ~] = get_info(path);
+            % [iteration, ~] = getIteration(path);
+            if contains(path, 'time_control') || contains(path, 'temp')
+                fprintf('Skipping %s\n', path);           
+                continue;
+            end
+            load_images_callback();
+            setFrame(stack_info.end_index - stack_info.start_index + 1);
+            if N == 4
+                stack_info.jammed = true;
+            else
+                % show dialog box to user to set the emptyornot field
+                options = {'Jammed', 'Not Jammed'};
+                answer = questdlg('Is the Jammed?', 'Jammed or Not', options{1}, options{2}, options{1});
+                if strcmp(answer, options{1})
+                    stack_info.jammed = true;
+                else
+                    stack_info.jammed = false;
+                end
+            end
+            save_stack_callback();
+            % WaitMessage.Send;
+        end
+        % WaitMessage.Destroy;
+    end
 %%%%%%%%%%%%%%%%%%%%%% LOCAL ORDER PARAMETER %%%%%%%%%%%%%%%%%%%%%%%%%%
     function psi = localOrderParameter(pos, m, r_cut)
         % localOrderParameter computes the local bond-orientational order parameter.
@@ -1856,6 +1914,8 @@ function start_image_viewer(stack_paths)
                 find_all_nhood();
             case 'Find all Si6'
                 find_all_psi();
+            case 'Set all Jam or Not'
+                set_all_jam_or_not();
         end
         
         display_warning(['Executed: ' selected_function]);
@@ -2017,13 +2077,23 @@ function start_image_viewer(stack_paths)
 %%%%%%%%%%%%%%%%%%%%%% UTILS %%%%%%%%%%%%%%%%%%%%%%
     % function to return a unique color from jet colormap for each N
     function color = get_color(N)
-        % get the color from the jet colormap
-        color = jet(50);
-        color = color(N, :);
-        % fprintf('Color for N = %d is %s\n', N, mat2str(color));
+        switch N
+            case 1
+                color = [0, 0, 0];
+            case 4
+                color = [1, 0, 0];
+            case 12
+                color = [0, 1, 0];
+            case 24
+                color = [0, 0, 1];
+            case 48
+                color = [1, 0, 1];
+            otherwise
+                color = [0, 0, 0];
+        end
     end
     function marker = get_marker(N)
-        markers = ['x', '+', 'h', '.', 'o', 's', 'd', '^', 'v', '>', '<', 'p', '*'];
+        markers = ['+', 'p', 'h', '.', 'o', '*', 'd', '^', 'v', '>', 'x', '<', 's'];
         marker = markers(mod(N, numel(markers)) + 1);
         % fprintf('Marker for N = %d is %s\n',N, marker);
     end

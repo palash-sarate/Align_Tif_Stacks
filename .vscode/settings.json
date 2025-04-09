@@ -2,6 +2,7 @@
     "cSpell.words": [
         "assignin",
         "cellfun",
+        "colormap",
         "copyfile",
         "disp",
         "drawpolygon",
@@ -9,6 +10,7 @@
         "easyocr",
         "exportgraphics",
         "fieldnames",
+        "fprint",
         "fprintf",
         "fullfile",
         "histcounts",
