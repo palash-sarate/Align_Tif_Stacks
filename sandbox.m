@@ -73,3 +73,6 @@ histogram(psi, 'Normalization', 'probability');
 xlabel('\psi');
 ylabel('Probability');
 title('Histogram of \psi');
+
+%%
+clc;
