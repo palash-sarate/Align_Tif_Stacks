@@ -21,7 +21,7 @@ classdef Ui < handle
             obj.app = app;
             obj.function_list = {'Change Drive', 'Plot all Gr', 'Plot all TimeStamps', 'Get Scales','Plot scales',...
                 'Local number density','Average timeStamps','Combine stacks','Plot durations','Set all Empty or Not','Set all Jam or Not'...
-                'Find all nhood', 'Find all Si6'};
+                'Find all nhood', 'Find all Si6', 'Get LBOOP', 'Get all LBOOP','Plot LBOOP for each N'};
             obj.createUi();
         end
 

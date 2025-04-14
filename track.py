@@ -64,7 +64,7 @@ def calculate_rdf(particles_path, r_max=100, dr=1):
     return rdf
 
 def compute_ql(particles_path= "F:\\shake_table_data\\N4\\4hz_hopperflow\\60deg\\10cm\\particle_locations_1.csv",
-               bead_dia = 7.1789, l=6, nhood = 6):
+               bead_dia = 7.1789, l=6, nhood = 2, box_size=800):
     # TODO : Add padding to the box for border corrections as the si 6 should have a mean of 1
     """
     Compute the local order parameter QL for a set of particles.
@@ -77,15 +77,25 @@ def compute_ql(particles_path= "F:\\shake_table_data\\N4\\4hz_hopperflow\\60deg\
     Series
         A Series containing the QL values.
     """
+ 
     r_max = bead_dia * nhood
     # load particles from csv
     particles = pd.read_csv(particles_path)
     points = particles[['x', 'y']].values
     # Add a z-coordinate of 0 to make the points 3D
     points = np.concatenate((points, np.zeros((points.shape[0], 1))), axis=1)
+    # shift the points to the center of the box
+    points[:, 0] -= box_size/2
+    points[:, 1] -= box_size/2
     # Create a 2D freud box object
-    box = freud.box.Box.square(L=800)
+    box = freud.box.Box.square(L=box_size)
     system = (box, points)
+    
+    # ax = plt.figure().add_subplot()
+    # system1 = freud.AABBQuery(box, points)
+    # system1.plot(ax)
+    # plt.show()
+    
     # Create a freud Ql object
     Ql = freud.order.Steinhardt(l)
 
@@ -93,9 +103,74 @@ def compute_ql(particles_path= "F:\\shake_table_data\\N4\\4hz_hopperflow\\60deg\
     ql = Ql.compute(system, neighbors={'r_max': r_max})
     psi = ql.particle_order
     return psi
+
+# compute bond orientation order parameter
+def compute_bond_orientation_order(particles_path= "F:\\shake_table_data\\N4\\4hz_hopperflow\\60deg\\10cm\\particle_locations_1.csv",
+                                   l=6, num_neighbors=6):
+    """
+    Compute the bond orientation order parameter for a set of particles.
+
+    Parameters:
+    particles : DataFrame
+        A DataFrame containing the coordinates of the particles.
+
+    Returns:
+    Series
+        A Series containing the bond orientation order parameter values.
+    """
+    # load particles from csv
+    particles = pd.read_csv(particles_path)
+    points = particles[['x', 'y']].values
+    # Add a z-coordinate of 0 to make the points 3D
+    points = np.concatenate((points, np.zeros((points.shape[0], 1))), axis=1)
     
-#%%
-# import matplotlib.pyplot as plt
+    order_parameter = np.zeros(len(points))
+    
+    for i in range(len(points)):
+        # find the closest n neighbors of the particle
+        distances = np.linalg.norm(points - points[i], axis=1)
+        # keep only first n neighbors
+        neighbors = np.argsort(distances)[1:num_neighbors+1]
+        # compute the bond orientation order parameter for the particle
+        ql = 0
+        for j in neighbors:
+            # angle between the line connecting the particle to its neighbors and the x-axis
+            theta = np.arctan2(points[j][1] - points[i][1], points[j][0] - points[i][0])
+            # compute the bond orientation order parameter for the particle
+            ql += np.exp(1j * l * theta)
+        ql /= num_neighbors
+        # store the bond orientation order parameter for the particle
+        order_parameter[i] = np.abs(ql)
+        
+    return order_parameter
+
+#%% test compute_ql function
+# psi = compute_ql()
+# # plot histogram of psi
+# plt.hist(psi, bins=100, density=True)
+# plt.xlabel('QL')
+# plt.ylabel('Density')
+# plt.title('Distribution of QL')
+# plt.xlim(0, 1)
+# plt.show()
+#%% test compute_bond_orientation_order function
+# bond_orders = compute_bond_orientation_order(num_neighbors=12)
+# # get the bond orientation order parameter
+# bond_order = np.mean(bond_orders)
+# # get the standard deviation of the bond orientation order parameter
+# bond_order_std = np.std(bond_orders)
+# print(f"Bond orientation order parameter: {bond_order:.3f} +/- {bond_order_std:.3f}")
+
+# # plot histogram of bond orientation order parameter
+# plt.hist(bond_orders, bins=100, density=True)
+# plt.xlabel('Bond orientation order parameter')
+
+# plt.ylabel('Density')
+# plt.title('Distribution of Bond orientation order parameter')
+# # plt.xlim(0, 1)
+# plt.show()
+
+#%% import matplotlib.pyplot as plt
 # nhood_values = [4, 6, 8, 10 , 12, 14, 16]
 # colors = ['red', 'blue', 'green', 'purple', 'orange', 'pink', 'brown']
 

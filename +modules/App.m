@@ -16,6 +16,7 @@ classdef App < handle
         masking
         steinhardt
         trial
+        voids
 
         path
         stack_info
@@ -27,7 +28,7 @@ classdef App < handle
         skip_alignment
         speed
         logs
-        monitorChoice = 1;
+        monitorChoice = 2;
         speeds = {1,2,4,8};
     end
 
@@ -55,6 +56,7 @@ classdef App < handle
             app.stack_paths = app.get_stack_paths();
 
             app.utils = modules.Utils(app);
+            app.voids = modules.Voids(app);
             app.timer = modules.Timer(app);
             app.trial = modules.Trial(app);
             app.steinhardt = modules.Steinhardt(app);

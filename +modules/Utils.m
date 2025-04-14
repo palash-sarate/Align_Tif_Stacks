@@ -21,7 +21,9 @@ classdef Utils < handle
                 case 48
                     color = [1, 0, 1];
                 otherwise
-                    color = [0, 0, 0];
+                    % get a color from the jet colormap
+                    colormap = jet(20);
+                    color = colormap(N, :);
             end
         end
         function marker = get_marker(~, N)
@@ -79,7 +81,8 @@ classdef Utils < handle
                 % remove the image data from the stack_info
                 obj.app.stack_info.img_data.imgs = cell(1, obj.app.stack_info.img_data.num_imgs);
                 % save the stack
-                save(sprintf('%s//stack_info_%s.mat', parentDir, iteration), 'obj.app.stack_info');
+                stack_info = obj.app.stack_info;
+                save(sprintf('%s//stack_info_%s.mat', parentDir, iteration), 'stack_info');
                 obj.display_warning(sprintf("Stack saved to %s//stack_info_%s.mat", parentDir, iteration));
                 obj.app.ui.controls.saveButton.String = 'Save';
                 obj.app.stack_info = temp_stack_info;
@@ -217,6 +220,12 @@ classdef Utils < handle
                     obj.app.steinhardt.find_all_psi();
                 case 'Set all Jam or Not'
                     obj.app.trial.set_all_jam_or_not();
+                case 'Get LBOOP'
+                    obj.app.steinhardt.get_LBOOP();
+                case 'Get all LBOOP'
+                    obj.app.steinhardt.get_all_LBOOP();
+                case 'Plot LBOOP for each N'
+                    obj.app.steinhardt.plot_LBOOP_per_chain();
             end
             
             obj.display_warning(['Executed: ' selected_function]);
@@ -327,7 +336,7 @@ classdef Utils < handle
         function display_warning(obj, msg)
             duration = 3;
             % Add the message to the logs
-            obj.app.app.logs{end+1} = msg;
+            obj.app.logs{end+1} = msg;
             % Create a text UI control to display the warning message
             warning_text = uicontrol('Style', 'text', 'String', msg, ...
                                         'Units', 'normalized','Position', [0.3 0.91 0.6 0.08], 'BackgroundColor', 'red', ...

@@ -1,5 +1,6 @@
 {
     "cSpell.words": [
+        "arctan",
         "assignin",
         "caxis",
         "cellfun",
@@ -46,6 +47,8 @@
         "isnan",
         "keypress",
         "keypressed",
+        "LBOOP",
+        "linalg",
         "loadmat",
         "meand",
         "meshgrid",
@@ -53,10 +56,12 @@
         "nargin",
         "ndarray",
         "nditer",
+        "nebors",
         "nhood",
         "normxcorr",
         "numel",
         "numpy",
+        "orntn",
         "parfeval",
         "parfor",
         "parpool",

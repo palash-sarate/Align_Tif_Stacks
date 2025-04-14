@@ -156,6 +156,99 @@ classdef Steinhardt < handle
                 fprintf('Psi calculated for stack %s\n', obj.app.path);
             end
         end
-    
+        function get_LBOOP(obj)
+            num_nebors = 6;
+            l = 6;
+            [iter, parentDir] = obj.app.utils.getIteration(obj.app.path);
+            particles_path = fullfile(parentDir, sprintf('particle_locations_%s.csv', iter));
+            if ~isfile(particles_path)
+                fprintf('Particle locations not found for stack %s\n', obj.app.path);
+                return;
+            end
+            bond_orders = py.track.compute_bond_orientation_order(particles_path, int32(l), int32(num_nebors));
+            % convert bond_orders from python ndarray to matlab array
+            bond_orders = double(py.array.array('d', py.numpy.nditer(bond_orders)));
+            % save the bond_orders to the stack_info
+            obj.app.stack_info.bond_orders = bond_orders;
+            obj.app.utils.save_stack_callback();
+        end
+        function get_all_LBOOP(obj)
+            % iterate over all the stacks
+            for i = 1:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp') || contains(obj.app.path, 'cont')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                fprintf('Calculating LBOOP for stack %s\n', obj.app.path);
+                obj.app.utils.load_stack_info();
+                obj.get_LBOOP();
+            end
+        end
+        function plot_LBOOP(obj)
+            % function to plot the current stack LBOOP on ax2
+            % get the current stack info
+            % [iter, parentDir] = obj.app.utils.getIteration(obj.app.path);
+            data = obj.app.stack_info.bond_orders;
+            % check if data is empty
+            if isempty(data)
+                fprintf('No data found for stack %s\n', obj.app.path);
+                return;
+            end
+            % plot the data as a histogram on ax2
+            cla(obj.app.ui.controls.ax2);
+            histogram(obj.app.ui.controls.ax2, data, 'Normalization', 'pdf', 'FaceColor', 'b', 'EdgeColor', 'none', 'FaceAlpha', 0.5);
+            % set the x and y limits to be the same as the current axis
+            xlim(obj.app.ui.controls.ax2, [0 1]);
+            ylim(obj.app.ui.controls.ax2, [0 1]);
+            % set the title and labels
+            title(obj.app.ui.controls.ax2, 'LBOOP');
+            xlabel(obj.app.ui.controls.ax2, 'LBOOP');
+            ylabel(obj.app.ui.controls.ax2, 'Probability Density');
+            % save the plot to the current stack folder
+            [iter, parentDir] = obj.app.utils.getIteration(obj.app.path);
+            exportgraphics(obj.app.ui.controls.ax2, fullfile(parentDir, sprintf('LBOOP_hist_%s.png', iter)));
+        end
+        function plot_LBOOP_per_chain(obj)
+            for N  = [4]
+                cla(obj.app.ui.controls.ax2);
+                hold(obj.app.ui.controls.ax2, 'on');
+                % get stack paths for the current N
+                stack_paths = obj.app.stack_paths(contains(obj.app.stack_paths, sprintf('\N%d\', N)));
+                for i = 1:3%length(stack_paths)
+                    obj.app.path = stack_paths{i};
+                    [~, f] = obj.app.utils.get_info(obj.app.path); 
+                    % [iter, parentDir] = obj.app.utils.getIteration(obj.app.path);
+                    if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp') || contains(obj.app.path, 'cont')
+                        fprintf('Skipping %s\n', obj.app.path);           
+                        continue;
+                    end
+                    fprintf('Plotting LBOOP for stack %s\n', obj.app.path);
+                    % load the stack info
+                    obj.app.utils.load_stack_info();
+                    data = obj.app.stack_info.bond_orders;
+                    % check if data is empty
+                    if isempty(data)
+                        fprintf('No data found for stack %s\n', obj.app.path);
+                        return;
+                    end
+                    % plot the data as a histogram on ax2
+                    [counts, edges] = histcounts(data, 'Normalization','pdf');
+                    edges = edges(2:end) - (edges(2)-edges(1))/2;
+                    plot(edges, counts, 'Color', obj.app.utils.get_color(f), 'LineWidth', 2, 'DisplayName', sprintf('N = %d', N));
+                end
+                hold(obj.app.ui.controls.ax2, 'off');
+                % set the x and y limits to be the same as the current axis
+                xlim(obj.app.ui.controls.ax2, [0 1]);
+                ylim(obj.app.ui.controls.ax2, [0 1]);
+                % set the title and labels
+                title(obj.app.ui.controls.ax2, 'LBOOP');
+                xlabel(obj.app.ui.controls.ax2, 'LBOOP');
+                ylabel(obj.app.ui.controls.ax2, 'Probability Density');
+                % save the plot to the current results folder F:\shake_table_data\Results\LBOOP
+                exportgraphics(obj.app.ui.controls.ax2, fullfile('F:\shake_table_data\Results\LBOOP', sprintf('LBOOP_hist_%d.png', N)));
+            end
+        end
     end
 end
