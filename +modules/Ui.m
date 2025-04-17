@@ -21,7 +21,8 @@ classdef Ui < handle
             obj.app = app;
             obj.function_list = {'Change Drive', 'Plot all Gr', 'Plot all TimeStamps', 'Get Scales','Plot scales',...
                 'Local number density','Average timeStamps','Combine stacks','Plot durations','Set all Empty or Not','Set all Jam or Not'...
-                'Find all nhood', 'Find all Si6', 'Get LBOOP', 'Get all LBOOP','Plot LBOOP for each N'};
+                'Find all nhood', 'Find all Si6', 'Get LBOOP', 'Get all LBOOP','Plot LBOOP for all N','Plot avg LBOOP for all N','Plot BOOP'...
+                'Superpose all LBOOP'};
             obj.createUi();
         end
 
@@ -186,8 +187,11 @@ classdef Ui < handle
 
             obj.controls.particleButton = uicontrol(obj.axesPanel, 'Style', 'pushbutton', ...
                 'CData', obj.particle_icon, 'Units', 'normalized', ...
-                'Position', [0 0.95 0.04 0.05], 'Callback', @(src, event) obj.app.toggle_particle_locations());
-
+                'Position', [0 0.95 0.04 0.05], 'Callback', @(src, event) obj.app.particle_locator.toggle_particle_locations());
+            % Add UI elements for voids detection
+            obj.app.ui.controls.particleButton = uicontrol(obj.axesPanel, 'Style', 'pushbutton', ...
+                'CData', obj.particle_icon, 'Units', 'normalized', ...
+                'Position', [0.05 0.95 0.04 0.05], 'Callback', @(src, event) obj.app.voids.detect_voids_callback());
 
             obj.info.playTimer = timer('ExecutionMode', 'fixedRate', 'Period', 0.1, 'TimerFcn', @(src, event) obj.app.utils.play_timer_callback);
             % Create indicators for aligned and shortened statuses

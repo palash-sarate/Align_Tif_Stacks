@@ -126,6 +126,7 @@ classdef Utils < handle
             end
             image_idx = obj.app.stack_info.start_index + k - 1;
             % fprintf('Frame number: %d\n image idx %d', k, image_idx);
+            obj.app.current_image_idx = image_idx; % Update the current image index
             % Get the current slider value
             set(obj.app.ui.controls.frameNumber, 'String', num2str(k)); % Update the frame number display
             set(obj.app.ui.controls.slider, 'Value', k);  % update the slider value
@@ -224,8 +225,14 @@ classdef Utils < handle
                     obj.app.steinhardt.get_LBOOP();
                 case 'Get all LBOOP'
                     obj.app.steinhardt.get_all_LBOOP();
-                case 'Plot LBOOP for each N'
+                case 'Plot LBOOP for all N'
                     obj.app.steinhardt.plot_LBOOP_per_chain();
+                case 'Plot avg LBOOP for all N'
+                    obj.app.steinhardt.plot_avg_LBOOP_per_chain();
+                case 'Plot BOOP'
+                    obj.app.steinhardt.plot_avg_BOOP();
+                case 'Superpose all LBOOP'
+                    obj.app.steinhardt.superpose_all_LBOOP();
             end
             
             obj.display_warning(['Executed: ' selected_function]);

@@ -28,15 +28,12 @@ classdef RDF < handle
         end
         function get_Gr(obj, ~,~)
             radius = 15 * 5;
-            start = obj.app.stack_info.start_index;
-            image_path = fullfile(obj.app.stack_info.img_data.img_files(start).folder, obj.app.stack_info.img_data.img_files(start).name);
-            [iter, parentDir] = obj.app.utils.getIteration(obj.app.path);
-            save_path = fullfile(parentDir, sprintf('particle_locations_%s.csv', iter));
+            img_idx = obj.app.stack_info.start_index;
 
             % if save_path doesn't exist, get the particle locations from the first image
             if ~isfile(save_path)
                 disp('getting particle locations');
-                obj.app.get_particle_locations(image_path, save_path);
+                particle_locations = obj.app.particle_locator.get_particle_locations(img_idx);
             end
 
             % check if gr exists in stack_info
@@ -44,17 +41,15 @@ classdef RDF < handle
                 disp('calculating gr');
                 % calculate gr for the first image
                 bin_width = 3;
-                obj.calculate_gr(radius, bin_width);
+                obj.calculate_gr(radius, bin_width, particle_locations);
                 % assignin('base', 'gr', gr);
             end
             % plot the gr
             obj.plot_gr(iter, parentDir);
             fprintf('Gr calculated for stack %s\n', obj.app.path);
         end
-        function gr = calculate_gr(obj, r_max, dr)
+        function gr = calculate_gr(obj, r_max, dr, particle_locations)
             % calculate the radial distribution function
-            % load the particle locations
-            particle_locations = obj.app.stack_info.particle_locations;
             % bins
             bin_centers = dr:0.1:r_max-dr;
             % calculate the histogram

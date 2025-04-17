@@ -17,6 +17,7 @@ classdef App < handle
         steinhardt
         trial
         voids
+        particle_locator
 
         path
         stack_info
@@ -28,6 +29,7 @@ classdef App < handle
         skip_alignment
         speed
         logs
+        current_image_idx
         monitorChoice = 2;
         speeds = {1,2,4,8};
     end
@@ -64,6 +66,7 @@ classdef App < handle
             app.aligner = modules.Aligner(app);
             app.shortener = modules.Shortener(app);
             app.rdf = modules.RDF(app);
+            app.particle_locator = modules.Particle_locator(app);
             app.ui = modules.Ui(app);
         end
 
@@ -148,43 +151,7 @@ classdef App < handle
             fprintf('Loaded stack %s\n', obj.path);
             WaitMessage.Destroy;
         end
-    %%%%%%%%%%%%%%%%%%%%%% PARTICLE LOCATIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function get_particle_locations(obj, image_path, save_path)
-            % get the particle locations from the image
-            py.track.find_particle_locations(image_path=image_path, diam=int32(5), max_iterations=int32(10), minmass=int32(1), separation=int32(5), save_path=save_path);
-            % load the saved csv from save_path
-            particle_locations = readtable(save_path);
-            obj.stack_info.particle_locations = particle_locations;
-            obj.utils.save_stack_callback();
-            % assignin('base', 'particle_locations', particle_locations);
-        end
-        function toggle_pores(~, ~,~)
 
-        end
-        function toggle_particle_locations(obj, ~,~)
-            if obj.particle_locations_visible
-                % hide the particle locations
-                obj.particle_locations_visible = false;
-                % get slider index
-                slider_idx = round(get(obj.ui.controls.slider, 'Value'));
-                obj.utils.setFrame(slider_idx);
-                set(gcf, 'WindowScrollWheelFcn', @obj.utils.scrollWheelMoved);
-            else
-                % show the particle locations
-                if ~isfield(obj.stack_info, 'particle_locations')
-                    obj.utils.display_warning('No particle locations found');
-                    return;
-                end
-                obj.particle_locations_visible = true;
-                obj.utils.setFrame(1);
-                % get the particle locations
-                particle_locations = obj.stack_info.particle_locations;
-                hold(obj.ui.controls.ax1, 'on');
-                plot(obj.ui.controls.ax1, particle_locations.x, particle_locations.y, 'b*');
-                hold(obj.ui.controls.ax1, 'off');
-                set(gcf, 'WindowScrollWheelFcn', {});
-            end
-        end
 
     %%%%%%%%%%%%%%%%%%%%%% JOIN STACKS %%%%%%%%%%%%%%%%%%%%%%
         % FUNCTION that takes two stack paths and rename the images in the second stack
