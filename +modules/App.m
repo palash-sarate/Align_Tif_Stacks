@@ -68,6 +68,9 @@ classdef App < handle
             app.rdf = modules.RDF(app);
             app.particle_locator = modules.Particle_locator(app);
             app.ui = modules.Ui(app);
+
+            % load the first stack
+            app.utils.goto_callback()
         end
 
         function stack_paths = get_stack_paths(~)

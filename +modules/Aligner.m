@@ -121,6 +121,7 @@ classdef Aligner < handle
             displacements = obj.app.stack_info.displacements;
             % clear axis
             cla(obj.app.ui.controls.ax2);
+            fprintf('Plotting displacements\n');
             % plot the displacements on obj.app.ui.controls.ax2
             plot(obj.app.ui.controls.ax2, displacements(:,1), 'r');
             hold(obj.app.ui.controls.ax2, 'on');

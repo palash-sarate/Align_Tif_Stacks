@@ -233,6 +233,10 @@ classdef Utils < handle
                     obj.app.steinhardt.plot_avg_BOOP();
                 case 'Superpose all LBOOP'
                     obj.app.steinhardt.superpose_all_LBOOP();
+                case 'Detect voids - stack'
+                    obj.app.voids.detect_voids_stack();
+                case 'Detect voids - all stacks'
+                    obj.app.voids.detect_voids_all_stacks();
             end
             
             obj.display_warning(['Executed: ' selected_function]);

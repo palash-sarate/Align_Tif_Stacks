@@ -12,22 +12,21 @@ classdef Particle_locator < handle
             % obj.app.ui.controls.particleButton = uicontrol('Style', 'pushbutton', 'String', 'Detect Particles', ...
             %     'Position', [20, 20, 100, 30], 'Callback', @(src, event) obj.detect_particles_callback(src, event));
         end
+        
         %%%%%%%%%%%%%%%%%%%%%% PARTICLE LOCATIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%
         function particle_locations = get_particle_locations(obj, image_idx)
             % check if obj.app.stack_info.particle_locations is a table
             if istable(obj.app.stack_info.particle_locations)
                 fprintf('Particle locations are in old format\n');
-                % means that its in old format
                 % convert to cell array
-                particle_locations = obj.app.stack_info.particle_locations;
-                obj.app.stack_info.particle_locations = cell(1, numel(obj.app.stack_info.img_data.img_files));
-                obj.app.stack_info.particle_locations{obj.app.stack_info.start_index} = particle_locations;
-
+                obj.convert_to_cellArray();
+                % save the stack info
                 obj.app.utils.save_stack_callback();
             end
 
             % check if particle_locations exist for index i
             if ~isfield(obj.app.stack_info, 'particle_locations') || isempty(obj.app.stack_info.particle_locations{image_idx})
+                fprintf('Finding particle locations for image %d\n', image_idx);
                 image_path = fullfile(obj.app.stack_info.img_data.img_files(image_idx).folder,...
                 obj.app.stack_info.img_data.img_files(image_idx).name);
                 % make a temp save path
@@ -44,7 +43,10 @@ classdef Particle_locator < handle
                 particle_locations = obj.app.stack_info.particle_locations{image_idx};
             end
             % clean up the particle locations
-            % remove the locations that are in the mask
+            particle_locations = obj.mask_particle_locations(particle_locations);
+        end
+        function particle_locations = mask_particle_locations(obj, particle_locations)
+              % remove the locations that are in the mask
             if obj.app.stack_info.masked
                 fprintf('Removing particle locations in the mask\n');
                 mask = obj.app.stack_info.mask;
@@ -62,7 +64,6 @@ classdef Particle_locator < handle
                 % remove the rows from the particle locations
                 particle_locations(rows_to_remove, :) = [];
             end
-
         end
         function draw_particle_locations(obj)
             idx = obj.app.current_image_idx;
@@ -92,6 +93,24 @@ classdef Particle_locator < handle
                 obj.draw_particle_locations();
                 set(gcf, 'WindowScrollWheelFcn', {});
             end
+        end
+        function process_full_stack(obj, ~,~)
+            % process the full stack of images
+            % get the number of images in the stack
+            num_images = length(obj.app.stack_info.img_data.img_files);
+            % loop through each image and get the particle locations
+            for i = 1:num_images
+                fprintf('Processing image %d of %d\n', i, num_images);
+                obj.get_particle_locations(i);
+            end
+            % save the stack info
+            obj.app.utils.save_stack_callback();
+        end
+        function convert_to_cellArray(obj)
+            % convert the stack info to a cell
+            particle_locations = obj.app.stack_info.particle_locations;
+            obj.app.stack_info.particle_locations = cell(1, numel(obj.app.stack_info.img_data.img_files));
+            obj.app.stack_info.particle_locations{obj.app.stack_info.start_index} = particle_locations;
         end
     end
 end
