@@ -29,12 +29,8 @@ classdef RDF < handle
         function get_Gr(obj, ~,~)
             radius = 15 * 5;
             img_idx = obj.app.stack_info.start_index;
-
-            % if save_path doesn't exist, get the particle locations from the first image
-            if ~isfile(save_path)
-                disp('getting particle locations');
-                particle_locations = obj.app.particle_locator.get_particle_locations(img_idx);
-            end
+            [iter, parentDir] = obj.app.utils.getIteration(obj.app.path);
+            particle_locations = obj.app.particle_locator.get_particle_locations(img_idx);
 
             % check if gr exists in stack_info
             if ~isfield(obj.app.stack_info, 'gr') || obj.app.forced
@@ -67,7 +63,7 @@ classdef RDF < handle
             function counts = get_counts(bins_centers, dr, particle_locations)
                 counts = zeros(1, numel(bins_centers));
                 wait = waitbar(0, 'Calculating Count for each Particle');
-                for i = 1:numel(particle_locations.x)            
+                for i = 1:numel(particle_locations.x)       
                     % get the particle location
                     x = particle_locations.x(i);
                     y = particle_locations.y(i);
@@ -204,14 +200,13 @@ classdef RDF < handle
                 % norm_count = norm_count ./ get_slice_area(bin_centers, dr, particle_locs);
                 % 3. Divide by the particle number density, i.e number/V
                 if ~isfield(obj.app.stack_info, 'number_density')
-                    calculate_number_density();
+                    calculate_number_density(particle_locs);
                 end
                 norm_count = norm_count ./ obj.app.stack_info.number_density;
             end
-            function calculate_number_density()
+            function calculate_number_density(particle_locations)
                 % calculate the number density of the particles
-                % get the particle locations
-                particle_locations = obj.app.stack_info.particle_locations;
+                
                 % get the box dimensions
                 xmin = min(particle_locations.x);
                 xmax = max(particle_locations.x);
@@ -227,9 +222,10 @@ classdef RDF < handle
             end
         end
         function plot_local_number_density(obj)
+            particle_locations = obj.app.particle_locator.get_particle_locations(obj.app.stack_info.start_index);
             % plot the local number density as a colormap only for 1st image
             if ~isfield(obj.app.stack_info, 'local_number_density')
-                obj.calculate_local_number_density();
+                obj.calculate_local_number_density(particle_locations);
             end
             local_number_density = obj.app.stack_info.local_number_density;
             % obj.app.utils.save_stack_callback();
@@ -241,9 +237,7 @@ classdef RDF < handle
             colorbar;
             clim([-1, 1]); % Set colorbar limits to 0 and 1
         end
-        function calculate_local_number_density(obj)
-            % get the particle locations
-            particle_locations = obj.app.stack_info.particle_locations;
+        function calculate_local_number_density(obj, particle_locations)
             bd = obj.app.stack_info.bd;
             % number density at each pixel is the...
             % number of particles in a box of size 20bd x 20bd

@@ -66,6 +66,24 @@ classdef Utils < handle
             trial_name = parts(end);
             parentDir = strjoin(parts(1:end-1), "\");
         end
+        function save_all_stacks(obj)
+            for i = 26:length(obj.app.stack_paths)
+                % Set the current stack in the dropdown
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                path = obj.app.stack_paths{i};
+                if contains(path, 'time_control') || contains(path, 'temp')
+                    fprintf('Skipping %s\n', path);           
+                    continue;
+                end
+                % Load the stack info
+                obj.load_stack_info();
+                
+                % Save the stack info
+                obj.save_stack_callback();
+                fprintf('Saved stack %d/%d\n', i, length(obj.app.stack_paths));
+            end
+            obj.display_warning("All stacks have been saved.");
+        end
         function save_stack_callback(obj, ~,~)
             % save the current stack
             if obj.app.stack_info.img_data.num_imgs == 0
@@ -82,11 +100,11 @@ classdef Utils < handle
                 obj.app.stack_info.img_data.imgs = cell(1, obj.app.stack_info.img_data.num_imgs);
                 % save the stack
                 stack_info = obj.app.stack_info;
-                save(sprintf('%s//stack_info_%s.mat', parentDir, iteration), 'stack_info');
+                save(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-struct', 'stack_info', '-v7.3');
                 obj.display_warning(sprintf("Stack saved to %s//stack_info_%s.mat", parentDir, iteration));
                 obj.app.ui.controls.saveButton.String = 'Save';
                 obj.app.stack_info = temp_stack_info;
-                assignin('base', 'stack_info', obj.app.stack_info);
+                % assignin('base', 'stack_info', obj.app.stack_info);
             end
         end
         function stack_info = initialize_stack_info(obj, img_data)
@@ -110,7 +128,9 @@ classdef Utils < handle
                 while isfield(obj.app.stack_info, 'stack_info')
                     obj.app.stack_info = obj.app.stack_info.stack_info;
                 end
+                fprintf('Loaded stack info from %s//stack_info_%s.mat\n', parentDir, iteration);
             end
+            % assignin('base', 'stack_info', obj.app.stack_info);
         end
         function setFrame(obj, k)
             persistent counter;
@@ -195,7 +215,9 @@ classdef Utils < handle
             % Execute the selected function based on its name
             switch selected_function
                 case 'Change Drive'
-                    obj.app.masking.change_drive_callback();            
+                    obj.app.masking.change_drive_callback();  
+                case 'Save all stacks'
+                    obj.save_all_stacks();
                 % You can add more functions as needed
                 case 'Plot all Gr'
                     obj.app.rdf.plot_all_gr();
@@ -203,6 +225,8 @@ classdef Utils < handle
                     obj.app.timer.plot_all_timestamps();
                 case 'Get Scales'
                     obj.app.trial.get_scales();
+                case 'Set Scales'
+                    obj.app.trial.set_bd();
                 case 'Plot scales'
                     obj.app.trial.plot_scales();
                 case 'Local number density'

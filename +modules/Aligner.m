@@ -25,7 +25,7 @@ classdef Aligner < handle
             obj.app.skip_alignment = false;
             obj.app.ui.controls.skipButton.Enable = 'on';
             % Check if the function is called as a callback
-            if nargin > 0 && isa(varargin{1},'matlab.ui.control.UIControl')
+            if ~isempty(varargin) && isa(varargin{1},'matlab.ui.control.UIControl')
                 % Called as a callback, set default mode
                 mode = 'manual';
             else

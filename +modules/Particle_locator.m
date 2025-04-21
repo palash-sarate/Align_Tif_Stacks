@@ -12,11 +12,11 @@ classdef Particle_locator < handle
             % obj.app.ui.controls.particleButton = uicontrol('Style', 'pushbutton', 'String', 'Detect Particles', ...
             %     'Position', [20, 20, 100, 30], 'Callback', @(src, event) obj.detect_particles_callback(src, event));
         end
-        
+
         %%%%%%%%%%%%%%%%%%%%%% PARTICLE LOCATIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%
         function particle_locations = get_particle_locations(obj, image_idx)
             % check if obj.app.stack_info.particle_locations is a table
-            if istable(obj.app.stack_info.particle_locations)
+            if isfield(obj.app.stack_info, 'particle_locations') && istable(obj.app.stack_info.particle_locations)
                 fprintf('Particle locations are in old format\n');
                 % convert to cell array
                 obj.convert_to_cellArray();
@@ -25,8 +25,10 @@ classdef Particle_locator < handle
             end
 
             % check if particle_locations exist for index i
-            if ~isfield(obj.app.stack_info, 'particle_locations') || isempty(obj.app.stack_info.particle_locations{image_idx})
-                fprintf('Finding particle locations for image %d\n', image_idx);
+            if ~isfield(obj.app.stack_info, 'particle_locations') ...
+                || length(obj.app.stack_info.particle_locations) < image_idx ...
+                || isempty(obj.app.stack_info.particle_locations{image_idx})
+                % fprintf('Finding particle locations for image %d\n', image_idx);
                 image_path = fullfile(obj.app.stack_info.img_data.img_files(image_idx).folder,...
                 obj.app.stack_info.img_data.img_files(image_idx).name);
                 % make a temp save path

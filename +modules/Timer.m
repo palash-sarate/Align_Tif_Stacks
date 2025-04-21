@@ -31,7 +31,7 @@ classdef Timer < handle
             WaitMessage = parfor_wait(obj.app.stack_info.img_data.num_imgs, 'Waitbar', true);
             for i = 1:obj.app.stack_info.img_data.num_imgs
                 if binary_timestamp_available
-                    timestamp = get_binary_timestamp(i);
+                    timestamp = obj.get_binary_timestamp(i);
                     if ~isempty(timestamp)
                         obj.app.stack_info.timestamps{i} = timestamp;
                     else
@@ -49,24 +49,26 @@ classdef Timer < handle
             end
             obj.app.utils.save_stack_callback();
             WaitMessage.Destroy;
-            function timestamp = get_binary_timestamp(image_idx)
-                % disp(image_idx);
-                img_path = fullfile(obj.app.stack_info.img_data.img_files(image_idx).folder, ...
-                                    obj.app.stack_info.img_data.img_files(image_idx).name);
-                % Try to decode the timestamp
-                try
-                    timestamp = py.pco.decode_timestamp(img_path);
-                    % convert timestamp from py.dict to matlab struct
-                    timestamp = structfun(@double, struct(timestamp), 'UniformOutput', false);
-                    valid_timestamp = obj.app.isValidTimeStamp(timestamp);         
-                catch
-                    obj.app.utils.display_warning('Failed to decode timestamp. Not a valid binary timestamp image.');
-                end
-                
-                if ~valid_timestamp
-                    timestamp = [];
-                    fprintf('Invalid timestamp found in image %d\n', image_idx);
-                end
+        end
+        function timestamp = get_binary_timestamp(obj, image_idx)
+            % disp(image_idx);
+            img_path = fullfile(obj.app.stack_info.img_data.img_files(image_idx).folder, ...
+                                obj.app.stack_info.img_data.img_files(image_idx).name);
+            % Try to decode the timestamp
+            try
+                timestamp = py.pco.decode_timestamp(img_path);
+                % convert timestamp from py.dict to matlab struct
+                timestamp = structfun(@double, struct(timestamp), 'UniformOutput', false);
+                valid_timestamp = obj.app.isValidTimeStamp(timestamp);         
+            catch
+                obj.app.utils.display_warning('Failed to decode timestamp. Not a valid binary timestamp image.');
+                valid_timestamp = false;
+                timestamp = [];
+            end
+            
+            if ~valid_timestamp
+                timestamp = [];
+                fprintf('Invalid timestamp found in image %d\n', image_idx);
             end
         end
         function timestamp_all_stacks = average_timeStamps(~)
@@ -215,8 +217,8 @@ classdef Timer < handle
         function plot_all_timestamps(obj, ~,~)
             Ns = [];
             % check if struct with gr of all stacks exists at F:\shake_table_data\Results
-            if exist('F:\shake_table_data\Results\timestamp_all_stacks.mat', 'file')
-                timestamp_all_stacks = load('F:\shake_table_data\Results\timestamp_all_stacks.mat');
+            if exist('F:\\shake_table_data\\Results\\timestamp_all_stacks.mat', 'file')
+                timestamp_all_stacks = load('F:\\shake_table_data\\Results\\timestamp_all_stacks.mat');
                 while isfield(timestamp_all_stacks, 'timestamp_all_stacks')
                     timestamp_all_stacks = timestamp_all_stacks.timestamp_all_stacks;
                 end

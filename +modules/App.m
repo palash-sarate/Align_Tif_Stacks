@@ -54,7 +54,6 @@ classdef App < handle
 
             app.searchWindow = 50;
             app.path = [];
-            app.stack_info = struct();
             app.stack_paths = app.get_stack_paths();
 
             app.utils = modules.Utils(app);
@@ -117,13 +116,16 @@ classdef App < handle
             [iteration, parentDir] = obj.utils.getIteration(obj.path);
             set(obj.ui.info.stackLabel, 'String', sprintf('Stack #%d of %d', current_idx, length(obj.stack_paths)));
 
-            if exist(sprintf('%s//stack_info_%s.mat', parentDir, iteration), 'file')
-                obj.stack_info = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration));
+            stack_info_path = sprintf('%s//stack_info_%s.mat', parentDir, iteration);
+
+            if exist(stack_info_path, 'file')
+                obj.stack_info = load(stack_info_path);
                 while isfield(obj.stack_info, 'stack_info')
                     obj.stack_info = obj.stack_info.stack_info;
                 end
+                % obj.stack_info = modules.Stackinfo(stack_info_path);
                 WaitMessage.Send;
-                assignin('base', 'stack_info', obj.stack_info);
+                % assignin('base', 'stack_info', obj.stack_info);
             else
                 img_data.img_files = dir(fullfile(obj.path, '*.tif'));
                 obj.stack_info = obj.utils.initialize_stack_info(img_data);

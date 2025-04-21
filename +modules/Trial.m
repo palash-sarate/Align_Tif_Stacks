@@ -114,6 +114,12 @@ classdef Trial < handle
             writematrix(data, 'F:\shake_table_data\Results\scales.csv');
             saveas(gcf, 'F:\shake_table_data\Results\scales.png');
         end
+        function set_bd(obj)
+            % img_idx = obj.app.stack_info.start_index;
+            % particle_locations = obj.app.particle_locator.get_particle_locations(img_idx);
+            obj.app.stack_info.bd = 7.39778706251612;
+            obj.app.utils.save_stack_callback();
+        end
         %%%%%%%%%%%%%%%%%%%%%% TRIAL CHARACTERIZATION %%%%%%%%%%%%%%%%%%%%%%%%%%
         function is_late = is_rec_start_late(~, n,fs,iter)
             % ignore list (48,10,2)(12,14,3)(24,12,1) - first frame is false

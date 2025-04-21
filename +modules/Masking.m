@@ -8,15 +8,14 @@ classdef Masking < handle
         end
         %%%%%%%%%%%%%%%%%%%%%% MASKING %%%%%%%%%%%%%%%%%%%%%%%%%%%
         function draw_masks_callback(obj, ~,~)
+            left_vertices = [0 400; 0 800; 250 800];
+            right_vertices = [800 400; 800 800; 550 800];
             % draw two right angle triangles on the image
             if isfield(obj.app.stack_info, 'masked')
                 if obj.app.stack_info.masked == true
                     left_vertices = obj.app.stack_info.mask_vertices(1:3, :);
                     right_vertices = obj.app.stack_info.mask_vertices(4:6, :);
                 end
-            else
-                left_vertices = [0 400;0 800;250 800];
-                right_vertices = [800 400;800 800;550 800];
             end 
 
             left_triangle = drawpolygon(obj.app.ui.controls.ax1, 'Position', left_vertices);
