@@ -30,19 +30,34 @@ classdef Voids < handle
             close(h);
         end
         function detect_voids_stack(obj)
-            WaitMessage = parfor_wait(obj.app.stack_info.end_index - obj.app.stack_info.start_index + 1,...
-             'Waitbar', true);
-            % loop over all the frames
-            for i = obj.app.stack_info.start_index:obj.app.stack_info.end_index
+            if ~obj.app.forced && isfield(obj.app.stack_info, 'voids')
+                % Check if voids already exist in the stack
+                % msg = 'Voids already exist in this stack. Do you want to overwrite them?';
+                % choice = questdlg(msg, 'Overwrite Voids', 'Yes', 'No', 'No');
+                % if strcmp(choice, 'No')
+                %     return;
+                % end
+                fprintf('Voids already exist in this stack. Skipping %s\n', obj.app.path);
+                return;
+            end            
+
+            h2 = waitbar(0, 'Processing stack');
+            % select equal spaced 100 frames to process from stack
+            images_to_process = round(linspace(obj.app.stack_info.start_index, obj.app.stack_info.end_index, 100));
+            % loop over all the frames to process
+            for i = 1:length(images_to_process)
+                % get the current frame index
+                image_idx = images_to_process(i);                 
                 % find the voids in the image
-                obj.detect_voids(i);
+                obj.detect_voids(image_idx);
                 % Update progress bar
-                WaitMessage.Send;
+                progress = i / length(images_to_process);
+                waitbar(progress, h2);
             end
             % save the current stack info
             obj.app.utils.save_stack_callback();
             % Close the progress bar
-            WaitMessage.Destroy;
+            close(h2);
         end
         function detect_voids(obj, img_idx)
             % Find voids in the image using morphological operations
@@ -55,6 +70,8 @@ classdef Voids < handle
             obj.append_voids(B, L, N, A, img_idx);
         end
         function detect_voids_callback(obj)
+            % Create a progress bar
+            h = waitbar(0, 'Detecting voids in image');
             % Find voids in the image using morphological operations
             particle_locations = obj.app.particle_locator.get_particle_locations(obj.app.current_image_idx);
             % find the white holes in the image
@@ -65,7 +82,7 @@ classdef Voids < handle
             obj.append_voids(B, L, N, A, obj.app.current_image_idx);
 
             % only keep boundaries that don't touch the edge of the image
-            B = obj.remove_holes_on_edge(B, bw_img);
+            B = obj.remove_holes_on_edge(B, size(bw_img, 1), size(bw_img, 2));
             % remove the holes that are too small
             B = B(cellfun(@(x) length(x) > 30, B));
 
@@ -74,6 +91,7 @@ classdef Voids < handle
             % plot(obj.app.ui.controls.ax2, particle_locations.x, 800 - particle_locations.y, 'ko', 'MarkerFaceColor', 'k', 'MarkerSize', 5);
             imshow(bw_img, 'Parent', obj.app.ui.controls.ax2);
             obj.overlay_boundaries(B);
+            close(h);
         end
         function append_voids(obj, B, L, N, A, idx)
             % Append the voids to the app.stack_info.voids at the current index
@@ -102,14 +120,12 @@ classdef Voids < handle
             obj.draw_boundaries(B);
             hold(obj.app.ui.controls.ax2, 'off');
         end
-        function B = remove_holes_on_edge(~, B, bw_img)
-            img_height = size(bw_img, 1);
-            img_width = size(bw_img, 2);
+        function B = remove_holes_on_edge(~, B, height, width)
             edge_boundaries = false(length(B), 1);
             for k = 1:length(B)
                 boundary = B{k};
-                if any(boundary(:,1) == 1) || any(boundary(:,1) == img_height) || ...
-                   any(boundary(:,2) == 1) || any(boundary(:,2) == img_width)
+                if any(boundary(:,1) == 1) || any(boundary(:,1) == height) || ...
+                   any(boundary(:,2) == 1) || any(boundary(:,2) == width)
                     edge_boundaries(k) = true;
                 end
             end
@@ -135,6 +151,196 @@ classdef Voids < handle
                 circleMask = (X - centerX).^2 + (Y - centerY).^2 <= radius^2;
                 bw_img(circleMask) = 0; % Set circle pixels to 0 (black)
             end
+        end
+        % area fraction of voids over time
+        function analyze_all_stacks_voids(obj)
+            % Create a progress bar
+            h = waitbar(0, 'Processing stacks');
+            % loop over all the stacks
+            for i = 1:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                % [N, fs] = obj.app.utils.get_info(path);
+                % [iteration, ~] = obj.app.utils.getIteration(path);
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                obj.app.utils.load_stack_info();
+                % calculate the area fraction of voids in the current stack
+                obj.analyze_stack_voids();
+                % Update progress bar
+                progress = i / length(obj.app.stack_paths);
+                waitbar(progress, h);
+            end
+            close(h);
+        end
+        function analyze_stack_voids(obj)
+            if ~isfield(obj.app.stack_info, 'voids')
+                fprintf('No voids found in %s\n', obj.app.path);
+                return;
+            end
+            h2 = waitbar(0, 'Processing stack');
+            % load first image to get the size
+            image_path = fullfile(obj.app.stack_info.img_data.img_files(1).folder, obj.app.stack_info.img_data.img_files(1).name);
+            image = imread(image_path);
+            img_height = size(image, 1);
+            img_width = size(image, 2);
+            total_area = sum(sum(~obj.app.stack_info.mask));
+
+            % loop over all the frames to process
+            for image_idx = 1:length(obj.app.stack_info.voids)
+                % fprintf('Processing frame %d of %s\n', image_idx, obj.app.path);
+                void_data = obj.app.stack_info.voids{image_idx};
+                if isempty(void_data)
+                    % fprintf('No voids found in frame %d of %s\n', i, obj.app.path);
+                    continue;
+                end
+                % clean up the void data
+                void_data = obj.clean_void_data(void_data, img_height, img_width);
+                % calculate the area fraction of voids in the image                
+                void_area = obj.calculate_void_area(void_data);
+                % Radial distribution function of voids
+                % save the void data to the app.stack_info.voids at the current index
+                obj.app.stack_info.voids{image_idx}.void_area = void_area;
+                obj.app.stack_info.voids{image_idx}.void_area_frac = void_area / total_area;
+
+                % rdf = obj.get_rdf(void_data, img_height, img_width);
+                % obj.app.stack_info.voids{image_idx}.rdf = rdf;
+
+                % Update progress bar
+                progress = image_idx / length(obj.app.stack_info.voids);
+                waitbar(progress, h2);
+            end
+            % save the current stack info
+            obj.app.utils.save_stack_callback();
+            close(h2);
+        end
+        function total_void_area = calculate_void_area(~, void_data)
+            % loop over the voids and calculate the total area of voids
+            total_void_area = 0;
+            for k = 1:length(void_data.B)
+                boundary = void_data.B{k};
+                % calculate the area of the void
+                total_void_area = total_void_area + polyarea(boundary(:,2), boundary(:,1));
+            end            
+        end
+        function rdf_data =  get_rdf(obj, void_data, img_height, img_width)
+            % number of voids
+            num_voids = length(void_data.B);
+            if num_voids < 2
+                rdf_data = [];
+                return; % Not enough voids to calculate RDF
+            end
+        
+            % Calculate centroids of each void
+            centroids = zeros(num_voids, 2); % [x, y] coordinates
+            for k = 1:num_voids
+                boundary = void_data.B{k};
+                centroids(k, :) = [mean(boundary(:, 2)), mean(boundary(:, 1))]; % [x, y]
+            end
+            centroids = array2table(centroids, 'VariableNames', {'x', 'y'});
+            max_distance = sqrt(img_width^2 + img_height^2); % Maximum possible distance
+            dr = 0.1; % Bin width for RDF calculation
+            rdf_data = obj.app.rdf.calculate_gr(max_distance, dr, centroids);
+            % Compute pairwise distances between void centroids
+            % distances = pdist(centroids); % Pairwise distances as a vector
+
+            % Define the bins for the RDF
+            % num_bins = 50; % Number of bins
+            % bin_edges = linspace(0, max_distance, num_bins + 1);
+            % bin_centers = (bin_edges(1:end-1) + bin_edges(2:end)) / 2;
+            % Calculate the histogram of distances
+            % counts = histcounts(distances, bin_edges);
+
+            % Normalize the RDF
+            % Calculate the area of each annular bin
+            % bin_areas = pi * (bin_edges(2:end).^2 - bin_edges(1:end-1).^2);
+            % Normalize by the total number of void pairs and the bin area
+            % total_pairs = num_voids * (num_voids - 1) / 2; % Total number of pairs
+            % rdf_values = counts ./ (bin_areas * total_pairs);
+
+            % Return the RDF as a struct
+            % rdf.bin_centers = bin_centers;
+            % rdf.values = rdf_values;
+        end
+        % rdf of voids
+        % density of voids over time
+        % total area of voids over time
+        function consolidate_voids_data(obj)
+            all_data = struct();
+            h = waitbar(0, 'Processing stacks');
+            % loop over the stacks
+            for i = 1:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                [N, fs] = obj.app.utils.get_info(obj.app.path);
+                [iteration, ~] = obj.app.utils.getIteration(obj.app.path);
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                obj.app.utils.load_stack_info();
+
+                % get number of non empty voids in the stack
+                num_voids = sum(~cellfun(@isempty, obj.app.stack_info.voids));
+
+                void_area = zeros(num_voids, 1);
+                void_area_frac = zeros(num_voids, 1);
+                image_indexes = zeros(num_voids, 1);
+                timeStamps = cell(num_voids, 1);
+
+                % loop over voids
+                temp_idx = 1;
+                for j = 1:length(obj.app.stack_info.voids)
+                    void_data = obj.app.stack_info.voids{j};
+                    if isempty(void_data)
+                        continue;
+                    end
+                    % clean up the void data
+                    void_area(temp_idx) = void_data.void_area;
+                    void_area_frac(temp_idx) = void_data.void_area_frac;
+                    image_indexes(temp_idx) = j;
+                    timeStamps{temp_idx} = obj.app.timer.predict_timeStamp(j);
+                    temp_idx = temp_idx + 1;
+                end
+                voids_data = table(void_area, void_area_frac, image_indexes, timeStamps);
+                all_data.(sprintf('N%d',N)).(sprintf('f%d',fs)).(sprintf('iter%s',iteration)) = voids_data;
+                % Update progress bar
+                progress = i / length(obj.app.stack_paths);
+                waitbar(progress, h);
+            end
+            % save the voids data to results folder);
+            save('F:\shake_table_data\Results\voids_data.mat', 'all_data');
+            close(h);
+        end
+        function visualize_voids_data(obj)
+            % load the voids data from results folder
+            voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            f = figure('Name', 'Void Data Visualization');
+            ax = axes(f);
+            hold(ax, 'on');
+            % cla(obj.app.ui.controls.ax2);
+            % hold(obj.app.ui.controls.ax2, 'on');
+            for i = 1:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                [N, fs] = obj.app.utils.get_info(obj.app.path);
+                [iteration, ~] = obj.app.utils.getIteration(obj.app.path);
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                data = voids_data.all_data.(sprintf('N%d',N)).(sprintf('f%d',fs)).(sprintf('iter%s',iteration));
+                plot(ax, data.image_indexes, data.void_area_frac, 'o-', 'DisplayName', sprintf('N%d f%d iter%s', N, fs, iteration));
+            end
+            hold(ax, 'off');
+        end
+        function data = clean_void_data(obj, data, height, width)
+            % only keep boundaries that don't touch the edge of the image
+            data.B = obj.remove_holes_on_edge(data.B, height, width);
+            % remove the holes that are too small
+            data.B = data.B(cellfun(@(x) length(x) > 30, data.B));
         end
     end
 end

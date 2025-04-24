@@ -69,7 +69,7 @@ classdef App < handle
             app.ui = modules.Ui(app);
 
             % load the first stack
-            app.utils.goto_callback()
+            % app.utils.goto_callback();
         end
 
         function stack_paths = get_stack_paths(~)
@@ -156,7 +156,6 @@ classdef App < handle
             fprintf('Loaded stack %s\n', obj.path);
             WaitMessage.Destroy;
         end
-
 
     %%%%%%%%%%%%%%%%%%%%%% JOIN STACKS %%%%%%%%%%%%%%%%%%%%%%
         % FUNCTION that takes two stack paths and rename the images in the second stack

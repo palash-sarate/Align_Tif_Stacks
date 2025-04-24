@@ -53,7 +53,7 @@ classdef RDF < handle
 
             % Option 2: For precise window counting (if dr != bin width/2)
             counts = get_counts(bin_centers, dr, particle_locations);
-            fprintf('Counts before normalizing: %d\n', counts);
+            % fprintf('Counts before normalizing: %d\n', counts);
             gr = normalize_count(counts, particle_locations);
 
             obj.app.stack_info.gr = gr;

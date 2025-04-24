@@ -70,6 +70,7 @@
         "parfeval",
         "parfor",
         "parpool",
+        "polyarea",
         "popupmenu",
         "pyobj",
         "PYTHONPATH",

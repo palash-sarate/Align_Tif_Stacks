@@ -50,7 +50,7 @@ classdef Particle_locator < handle
         function particle_locations = mask_particle_locations(obj, particle_locations)
               % remove the locations that are in the mask
             if obj.app.stack_info.masked
-                fprintf('Removing particle locations in the mask\n');
+                % fprintf('Removing particle locations in the mask\n');
                 mask = obj.app.stack_info.mask;
                 % get the x and y coordinates of the particle locations
                 x = particle_locations.x;

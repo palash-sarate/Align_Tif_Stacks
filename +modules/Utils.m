@@ -89,22 +89,29 @@ classdef Utils < handle
             if obj.app.stack_info.img_data.num_imgs == 0
                 obj.display_warning("load some images first");
             else
+                WaitMessage = parfor_wait(4, 'Waitbar', true);
                 while isfield(obj.app.stack_info, 'stack_info')
                     obj.app.stack_info = obj.app.stack_info.stack_info;
                 end
+                WaitMessage.Send;
                 temp_stack_info = obj.app.stack_info;
                 % get the current stack path
                 obj.app.path = obj.app.stack_paths{get(obj.app.ui.controls.stackDropdown, 'Value')};
                 [iteration, parentDir] = obj.getIteration(obj.app.path);
                 % remove the image data from the stack_info
                 obj.app.stack_info.img_data.imgs = cell(1, obj.app.stack_info.img_data.num_imgs);
+                WaitMessage.Send;
                 % save the stack
                 stack_info = obj.app.stack_info;
                 save(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-struct', 'stack_info', '-v7.3');
+                WaitMessage.Send;
                 obj.display_warning(sprintf("Stack saved to %s//stack_info_%s.mat", parentDir, iteration));
                 obj.app.ui.controls.saveButton.String = 'Save';
                 obj.app.stack_info = temp_stack_info;
+                fprintf('Saved stack info to %s//stack_info_%s.mat\n', parentDir, iteration);
+                WaitMessage.Send;
                 % assignin('base', 'stack_info', obj.app.stack_info);
+                WaitMessage.Destroy;
             end
         end
         function stack_info = initialize_stack_info(obj, img_data)
@@ -261,6 +268,12 @@ classdef Utils < handle
                     obj.app.voids.detect_voids_stack();
                 case 'Detect voids - all stacks'
                     obj.app.voids.detect_voids_all_stacks();
+                case 'Analyze voids - stack'
+                    obj.app.voids.analyze_stack_voids();
+                case 'Analyze voids - all stacks'
+                    obj.app.voids.analyze_all_stacks_voids();
+                case 'Consolidate voids data'
+                    obj.app.voids.consolidate_voids_data();
             end
             
             obj.display_warning(['Executed: ' selected_function]);
@@ -328,7 +341,7 @@ classdef Utils < handle
             winopen(parentDir);
         end
         function slider_callback(obj, ~, ~)
-            if ~evalin('base', 'exist(''stack_info'', ''var'')')
+            if obj.app.stack_info.img_data.num_imgs == 0
                 obj.display_warning("load some images first");
             else        
                 % Get the current slider value
