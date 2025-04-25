@@ -317,24 +317,88 @@ classdef Voids < handle
         function visualize_voids_data(obj)
             % load the voids data from results folder
             voids_data = load('F:\shake_table_data\Results\voids_data.mat');
-            f = figure('Name', 'Void Data Visualization');
+            f = figure('Name', 'Area frac Visualization');
             ax = axes(f);
             hold(ax, 'on');
-            % cla(obj.app.ui.controls.ax2);
-            % hold(obj.app.ui.controls.ax2, 'on');
+            f2 = figure('Name', 'Total area Visualization');
+            ax2 = axes(f2);
+            hold(ax2, 'on');
+            f3 = figure('Name', 'Initial Area frac');
+            ax3 = axes(f3);
+            hold(ax3, 'on');
             for i = 1:length(obj.app.stack_paths)
                 set(obj.app.ui.controls.stackDropdown, 'Value', i);
                 obj.app.path = obj.app.stack_paths{i};
                 [N, fs] = obj.app.utils.get_info(obj.app.path);
-                [iteration, ~] = obj.app.utils.getIteration(obj.app.path);
-                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')                
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+                if ~isfield(empty, 'empty')
+                    obj.app.trial.set_stack_empty_or_not();
+                    empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+                end
+                if ~empty.empty                  
                     fprintf('Skipping %s\n', obj.app.path);           
                     continue;
                 end
                 data = voids_data.all_data.(sprintf('N%d',N)).(sprintf('f%d',fs)).(sprintf('iter%s',iteration));
-                plot(ax, data.image_indexes, data.void_area_frac, 'o-', 'DisplayName', sprintf('N%d f%d iter%s', N, fs, iteration));
+                plot(ax3, N, data.void_area_frac(1), 'o', 'Color',...
+                    obj.app.utils.get_color(N), 'DisplayName', 'None');
+                plot(ax, data.image_indexes, data.void_area_frac, 'Color',...
+                    obj.app.utils.get_color(N), 'DisplayName', 'None');
+                plot(ax2, data.image_indexes, data.void_area, 'Color',...
+                    obj.app.utils.get_color(N), 'DisplayName', 'None');
             end
+
+            unique_Ns = [4, 12, 24, 48];
+            legend_handles = zeros(1, numel(unique_Ns));
+            legend_handles2 = zeros(1, numel(unique_Ns));
+            legend_handles3 = zeros(1, numel(unique_Ns));
+            legend_entries = cell(1, numel(unique_Ns));
+            
+            for j = 1:numel(unique_Ns)
+                N_val = unique_Ns(j);
+                legend_handles(j) = plot(ax, NaN, NaN, 'LineWidth', 2, 'Color', obj.app.utils.get_color(N_val));
+                legend_handles2(j) = plot(ax2, NaN, NaN, 'LineWidth', 2, 'Color', obj.app.utils.get_color(N_val));
+                legend_handles3(j) = plot(ax3, NaN, NaN, 'LineWidth', 2, 'Color', obj.app.utils.get_color(N_val));
+                legend_entries{j} = sprintf('N = %d', N_val);
+            end
+            
+            legend(ax, legend_handles, legend_entries, 'Location', 'best');
+            legend(ax2, legend_handles2, legend_entries, 'Location', 'best');
+            legend(ax3, legend_handles3, legend_entries, 'Location', 'SouthEast');
             hold(ax, 'off');
+            hold(ax2, 'off');
+            hold(ax3, 'off');
+            ax3.YLim = [0, 0.2];
+            % set uninque N to be x axis ticks of ax3
+            ax3.XTick = unique_Ns;
+            ax3.XTickLabel = unique_Ns;
+        end
+        function create_images(obj)
+            for i = 1:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                [N, fs] = obj.app.utils.get_info(obj.app.path);
+                [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')                
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+                if ~isfield(empty, 'empty')
+                    obj.app.trial.set_stack_empty_or_not();
+                    empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+                end
+                if ~empty.empty
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                data = voids_data.all_data.(sprintf('N%d',N)).(sprintf('f%d',fs)).(sprintf('iter%s',iteration));
+            end
         end
         function data = clean_void_data(obj, data, height, width)
             % only keep boundaries that don't touch the edge of the image

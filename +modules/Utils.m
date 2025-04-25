@@ -274,6 +274,8 @@ classdef Utils < handle
                     obj.app.voids.analyze_all_stacks_voids();
                 case 'Consolidate voids data'
                     obj.app.voids.consolidate_voids_data();
+                case 'Visualize voids data'
+                    obj.app.voids.visualize_voids_data();
             end
             
             obj.display_warning(['Executed: ' selected_function]);

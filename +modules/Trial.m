@@ -147,20 +147,23 @@ classdef Trial < handle
                     fprintf('Skipping %s\n', obj.app.path);           
                     continue;
                 end
-                obj.app.load_images_callback();
-                obj.app.utils.setFrame(obj.app.stack_info.end_index - obj.app.stack_info.start_index + 1);
-                % show dialog box to user to set the emptyornot field
-                options = {'Empty', 'Not Empty'};
-                answer = questdlg('Is the hopper empty?', 'Empty or Not', options{1}, options{2}, options{1});
-                if strcmp(answer, options{1})
-                    obj.app.stack_info.empty = true;
-                else
-                    obj.app.stack_info.empty = false;
-                end
-                obj.app.utils.save_stack_callback();
+                obj.set_stack_empty_or_not();
                 % WaitMessage.Send;
             end
             % WaitMessage.Destroy;
+        end
+        function set_stack_empty_or_not(obj)
+            obj.app.load_images_callback();
+            obj.app.utils.setFrame(obj.app.stack_info.end_index - obj.app.stack_info.start_index + 1);
+            % show dialog box to user to set the emptyornot field
+            options = {'Empty', 'Not Empty'};
+            answer = questdlg('Is the hopper empty?', 'Empty or Not', options{1}, options{2}, options{1});
+            if strcmp(answer, options{1})
+                obj.app.stack_info.empty = true;
+            else
+                obj.app.stack_info.empty = false;
+            end
+            obj.app.utils.save_stack_callback();
         end
         function set_all_jam_or_not(obj)
             for i = 1:length(obj.app.stack_paths)
