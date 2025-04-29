@@ -276,6 +276,8 @@ classdef Utils < handle
                     obj.app.voids.consolidate_voids_data();
                 case 'Visualize voids data'
                     obj.app.voids.visualize_voids_data();
+                case 'Create voids images'
+                    obj.app.voids.create_images();
             end
             
             obj.display_warning(['Executed: ' selected_function]);
@@ -388,7 +390,7 @@ classdef Utils < handle
             % Add the message to the logs
             obj.app.logs{end+1} = msg;
             % Create a text UI control to display the warning message
-            warning_text = uicontrol('Style', 'text', 'String', msg, ...
+            warning_text = uicontrol(obj.app.ui.fig,'Style', 'text', 'String', msg, ...
                                         'Units', 'normalized','Position', [0.3 0.91 0.6 0.08], 'BackgroundColor', 'red', ...
                                         'ForegroundColor', 'white', 'FontSize', 16, 'Visible', 'on');
 

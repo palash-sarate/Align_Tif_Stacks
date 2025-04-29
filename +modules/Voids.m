@@ -151,6 +151,7 @@ classdef Voids < handle
                 circleMask = (X - centerX).^2 + (Y - centerY).^2 <= radius^2;
                 bw_img(circleMask) = 0; % Set circle pixels to 0 (black)
             end
+            bw_img = double(bw_img);
         end
         % area fraction of voids over time
         function analyze_all_stacks_voids(obj)
@@ -377,34 +378,160 @@ classdef Voids < handle
             % set uninque N to be x axis ticks of ax3
             ax3.XTick = unique_Ns;
             ax3.XTickLabel = unique_Ns;
+            % save the figures
+            save_dir = "F://shake_table_data//Results//voids_images//";
+            if ~exist(save_dir, 'dir')
+                mkdir(save_dir);
+            end
+            exportgraphics(ax, sprintf('%s//voids_area_frac.png', save_dir));
+            exportgraphics(ax2, sprintf('%s//voids_area.png', save_dir));
+            exportgraphics(ax3, sprintf('%s//voids_initial_area_frac.png', save_dir));
+
+            plot_size_distribution(obj);
         end
         function create_images(obj)
-            for i = 1:length(obj.app.stack_paths)
+            h = waitbar(0, 'Processing stacks');
+            for i = 1%:length(obj.app.stack_paths)
                 set(obj.app.ui.controls.stackDropdown, 'Value', i);
                 obj.app.path = obj.app.stack_paths{i};
-                [N, fs] = obj.app.utils.get_info(obj.app.path);
+                % [N, fs] = obj.app.utils.get_info(obj.app.path);
                 [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
                 if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')                
                     fprintf('Skipping %s\n', obj.app.path);           
                     continue;
                 end
-                empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
-                if ~isfield(empty, 'empty')
-                    obj.app.trial.set_stack_empty_or_not();
-                    empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+
+                obj.app.utils.load_stack_info();
+                start_frame_timestamp = obj.app.timer.time_2_sec(obj.app.stack_info.timestamps{obj.app.stack_info.start_index});
+                first_image = imread(fullfile(obj.app.stack_info.img_data.img_files(obj.app.stack_info.start_index).folder,...
+                 obj.app.stack_info.img_data.img_files(obj.app.stack_info.start_index).name));
+                [height, width, ~] = size(first_image);
+                % Desired height for the overlay image
+                desired_height = 100; % Adjust as needed
+                scale_factor = desired_height / height;
+                overlay_width = round(width * scale_factor);
+                overlay_height = round(height * scale_factor);
+                for j = 1:10:length(obj.app.stack_info.voids)
+                    voids = obj.app.stack_info.voids{j};
+                    if isempty(voids)
+                        continue;
+                    end
+                    particle_locations = obj.app.particle_locator.get_particle_locations(j);
+                    % find the white holes in the image
+                    bw_img = obj.get_locations_image(particle_locations);
+                    % find the voids in the image
+                    voids = obj.clean_void_data(voids, size(bw_img, 1), size(bw_img, 2));
+                    B = voids.B;
+
+                    % plot the bw image on ax2
+                    cla(obj.app.ui.controls.ax2);
+                    % plot(obj.app.ui.controls.ax2, particle_locations.x, 800 - particle_locations.y, 'ko', 'MarkerFaceColor', 'k', 'MarkerSize', 5);
+                    obj.overlay_boundaries(B);
+                    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                    % add the original image to the ax2 to the bottom right corner
+                    image = imread(fullfile(obj.app.stack_info.img_data.img_files(j).folder, obj.app.stack_info.img_data.img_files(j).name));
+                    resizedGray = imresize(image, [overlay_height, overlay_width]);
+                    startRow = height - overlay_height + 1;
+                    startCol = width - overlay_width + 1;
+                    endRow = height;
+                    endCol = width;
+                    bw_img(startRow:endRow, startCol:endCol) = resizedGray;
+                    imshow(bw_img, 'Parent', obj.app.ui.controls.ax2);
+                    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                    % add timestamp to the image
+                    timeStamp = obj.app.timer.predict_timeStamp(j);
+                    secs = obj.app.timer.time_2_sec(timeStamp);
+                    text(obj.app.ui.controls.ax2, 'Units', 'normalized', 'Position', [0.99, 0.03], ...
+                        'String', sprintf("%.2f Sec", secs-start_frame_timestamp), ...
+                        'Color', 'black', 'FontSize', 18, 'HorizontalAlignment', 'right');
+                    % save the image
+                    save_dir = sprintf("%s//voids_images_%s//", parentDir, iteration);
+                    if ~exist(save_dir, 'dir')
+                        mkdir(save_dir);
+                    end                    
+                    exportgraphics(obj.app.ui.controls.ax2, sprintf('%s//voids_%d.png', save_dir, j));
                 end
-                if ~empty.empty
-                    fprintf('Skipping %s\n', obj.app.path);           
-                    continue;
-                end
-                data = voids_data.all_data.(sprintf('N%d',N)).(sprintf('f%d',fs)).(sprintf('iter%s',iteration));
+                progress = i / length(obj.app.stack_paths);
+                waitbar(progress, h);
             end
+            close(h);
         end
         function data = clean_void_data(obj, data, height, width)
             % only keep boundaries that don't touch the edge of the image
             data.B = obj.remove_holes_on_edge(data.B, height, width);
             % remove the holes that are too small
             data.B = data.B(cellfun(@(x) length(x) > 30, data.B));
+        end
+        function plot_size_distribution(obj)
+            f = figure('Name', 'Area frac Visualization');
+            ax = axes(f);
+            hold(ax, 'on');
+            % if hist_data already exists, load it
+            if evalin('base', 'exist(''hist_data'', ''var'')')
+                hist_data = evalin('base', 'hist_data');
+            else
+                hist_data = struct();
+                for i = 1:length(obj.app.stack_paths)
+                    set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                    obj.app.path = obj.app.stack_paths{i};
+                    [N, fs] = obj.app.utils.get_info(obj.app.path);
+                    [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
+                    if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')                
+                        fprintf('Skipping %s\n', obj.app.path);           
+                        continue;
+                    end
+                    % obj.app.utils.load_stack_info();
+                    voids_struct = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'voids');
+                    % assignin('base', 'voids_struct', voids_struct);
+                    if ~isfield(voids_struct, 'voids')
+                        fprintf('No voids found in %s\n', obj.app.path);
+                        continue;
+                    end
+                    voids = voids_struct.voids;
+                    for j = 1:length(voids)
+                        void_data = voids{j};
+                        if isempty(void_data)
+                            continue;
+                        end
+                        % calculate the area fraction of voids in the current stack
+                        if ~isfield(hist_data, sprintf('N%d', N))
+                            hist_data.(sprintf('N%d', N)) = [];
+                        end
+                        boundaries = void_data.B;
+                        areas = zeros(length(boundaries), 1);
+                        for k = 1:length(boundaries)
+                            boundary = boundaries{k};
+                            % calculate the area of the void
+                            areas(k) = polyarea(boundary(:,2), boundary(:,1));
+                        end
+                        hist_data.(sprintf('N%d', N)) = [hist_data.(sprintf('N%d', N)); areas];
+                        break;
+                    end
+                    fprintf('collected voids in %s\n', obj.app.path);
+                end
+                assignin('base', 'hist_data', hist_data);
+            end
+            % loop over the hist_data and plot the histogram of voids for each N
+            unique_Ns = fieldnames(hist_data);
+            for i = 1:length(unique_Ns)
+                N = str2double(unique_Ns{i}(2:end));
+                boundaries = hist_data.(unique_Ns{i});
+                % only keep boundaries that don't touch the edge of the image
+                boundaries = obj.remove_holes_on_edge(boundaries, 800, 800);
+                % remove the holes that are too small
+                boundaries = boundaries(cellfun(@(x) length(x) > 30, boundaries));
+                areas = zeros(length(boundaries), 1);
+                for k = 1:length(boundaries)
+                    boundary = boundaries{k};
+                    % calculate the area of the void
+                    areas(k) = polyarea(boundary(:,2), boundary(:,1));
+                end
+                areas = areas(areas < 1500);
+                % plot the histogram of voids for each N
+                histogram(ax, areas, 100, 'Normalization', 'probability', 'DisplayName', sprintf("N = %d",N), 'EdgeColor', obj.app.utils.get_color(N), 'FaceColor', obj.app.utils.get_color(N),'FaceAlpha',0.1);
+            end
+            legend(ax, 'Location', 'best');
+            hold(ax, 'off');
         end
     end
 end
