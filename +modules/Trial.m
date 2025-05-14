@@ -120,6 +120,48 @@ classdef Trial < handle
             obj.app.stack_info.bd = 7.39778706251612;
             obj.app.utils.save_stack_callback();
         end
+        function plot_movement(obj)
+            start_frame = obj.app.stack_info.start_index;
+            end_frame = obj.app.stack_info.end_index;
+            step_size = 1;
+            obj.app.stack_info.movements = obj.get_movement(start_frame, end_frame, step_size);
+            % plot the movements
+            frames = start_frame:step_size:end_frame;
+            plot(obj.app.ui.controls.ax2, frames, movements, 'LineWidth', 2);
+            title(obj.app.ui.controls.ax2, 'Particle Movements Over Frames');
+            xlabel(obj.app.ui.controls.ax2, 'Frame Number');
+            ylabel(obj.app.ui.controls.ax2, 'Movement');
+            % grid(obj.app.ui.controls.ax2, 'on');
+        end
+        % GPU accelerated function to compare first n images with previous image
+        function differences = get_movement(obj, start_frame, end_frame, step_size)
+            n = end_frame - start_frame + 1;
+            differences = zeros(numel(obj.app.stack_info.img_data.img_files), 1);
+            % f = waitbar(0,'Please wait...','Name','Aligning stack...');
+            WaitMessage = parfor_wait(n, 'Waitbar', true);
+            img_data = obj.app.stack_info.img_data;
+            roi = [200, 750, 400, 100]; % [x, y, width, height]
+            parfor k = start_frame:end_frame
+                % obj.app.utils.display_warning(num2str(k));
+                baseFileName = img_data.img_files(k-1).name;
+                fullFileName = fullfile(img_data.img_files(k-1).folder, baseFileName);
+                template = imread(fullFileName);
+                template = imcrop(mat2gray(template), roi);
+                displaced_img1 = imtranslate(template, - obj.app.stack_info.displacements(k-1, :));
+                % imshow(displaced_img1, 'Parent', obj.app.ui.controls.ax1);
+                baseFileName = img_data.img_files(k).name;
+                fullFileName = fullfile(img_data.img_files(k).folder, baseFileName);
+                bwImage = imread(fullFileName);
+                bwImage = imcrop(mat2gray(bwImage), roi);
+                displaced_img2 = imtranslate(bwImage, - obj.app.stack_info.displacements(k, :));
+
+                difference = imabsdiff(displaced_img1, displaced_img2);
+                differences(k) = sum(difference(:));
+                WaitMessage.Send;
+            end
+            WaitMessage.Destroy
+            % maxDiffIndex = find(differences == max(differences));
+        end
         %%%%%%%%%%%%%%%%%%%%%% TRIAL CHARACTERIZATION %%%%%%%%%%%%%%%%%%%%%%%%%%
         function is_late = is_rec_start_late(~, n,fs,iter)
             % ignore list (48,10,2)(12,14,3)(24,12,1) - first frame is false

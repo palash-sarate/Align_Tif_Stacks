@@ -74,5 +74,23 @@ xlabel('\psi');
 ylabel('Probability');
 title('Histogram of \psi');
 
-%%
-clc;
+%% get diameter and center of boundaries in ff_voids
+ff_voids = voids{start_index};
+boundaries = ff_voids.B;
+% calculate the diameter of each boundary
+% and the center of each boundary
+ff_voids.diameters = zeros(length(boundaries), 1);
+ff_voids.centers = zeros(length(boundaries), 2);
+
+for i = 1:length(boundaries)
+    % get the coordinates of the boundary
+    boundary = boundaries{i};
+    % calculate the diameter of the boundary
+    % ff_voids.diameters(i) = max(pdist(boundary));
+    % Fit a minimum enclosing circle to the boundary
+    [center, radius] = minboundcircle(boundary(:,1), boundary(:,2));
+    ff_voids.diameters(i) = 2 * radius; % Diameter is twice the radius
+    % calculate the center of the boundary
+    ff_voids.centers(i, :) = mean(boundary, 1);
+end
+ff_voids.diameters = ff_voids.diameters/ 7;

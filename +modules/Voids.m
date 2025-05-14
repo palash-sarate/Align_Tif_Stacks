@@ -315,6 +315,7 @@ classdef Voids < handle
             save('F:\shake_table_data\Results\voids_data.mat', 'all_data');
             close(h);
         end
+        
         function visualize_voids_data(obj)
             % load the voids data from results folder
             voids_data = load('F:\shake_table_data\Results\voids_data.mat');
@@ -388,6 +389,66 @@ classdef Voids < handle
             exportgraphics(ax3, sprintf('%s//voids_initial_area_frac.png', save_dir));
 
             plot_size_distribution(obj);
+            plot_area_fraction(obj);
+        end
+        function plot_area_fraction(obj)
+            % Load the voids data from results folder
+            voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            unique_Ns = [4, 12, 24, 48];
+            
+            % Loop through each unique N to create separate plots
+            for j = 1:numel(unique_Ns)
+                N_val = unique_Ns(j);
+                
+                % Create a new figure for each N
+                f = figure('Name', sprintf('Area frac Visualization for N = %d', N_val));
+                ax = axes(f);
+                hold(ax, 'on');
+                
+                for i = 1:length(obj.app.stack_paths)
+                    set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                    obj.app.path = obj.app.stack_paths{i};
+                    [N, fs] = obj.app.utils.get_info(obj.app.path);
+                    [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
+                    
+                    if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                        fprintf('Skipping %s\n', obj.app.path);
+                        continue;
+                    end
+                    
+                    empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+                    if ~isfield(empty, 'empty')
+                        obj.app.trial.set_stack_empty_or_not();
+                        empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+                    end
+                    
+                    if ~empty.empty
+                        fprintf('Skipping %s\n', obj.app.path);
+                        continue;
+                    end
+                    
+                    if N == N_val
+                        data = voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration));
+                        normalized_x = ((data.image_indexes-min(data.image_indexes)) / max(data.image_indexes)) * 100;
+                        plot(ax, normalized_x, data.void_area_frac, 'Color', ...
+                            obj.app.utils.get_color(N));
+                    end
+                end
+                
+                % Add legend and labels
+                % legend(ax, 'Location', 'best');
+                xlabel(ax, 'Percent Completion (%)');
+                ylabel(ax, 'Area Fraction');
+                title(ax, sprintf('Area Fraction Visualization for N = %d', N_val));
+                hold(ax, 'off');
+                
+                % Save the figure
+                save_dir = "F://shake_table_data//Results//voids_images//";
+                if ~exist(save_dir, 'dir')
+                    mkdir(save_dir);
+                end
+                exportgraphics(ax, sprintf('%s//voids_area_frac_N%d.png', save_dir, N_val));
+            end
         end
         function create_images(obj)
             h = waitbar(0, 'Processing stacks');

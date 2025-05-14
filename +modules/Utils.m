@@ -278,6 +278,8 @@ classdef Utils < handle
                     obj.app.voids.visualize_voids_data();
                 case 'Create voids images'
                     obj.app.voids.create_images();
+                case 'Plot movements - stack'
+                    obj.app.trial.plot_movement();
             end
             
             obj.display_warning(['Executed: ' selected_function]);
