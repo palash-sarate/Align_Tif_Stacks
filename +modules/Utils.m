@@ -280,6 +280,12 @@ classdef Utils < handle
                     obj.app.voids.create_images();
                 case 'Plot movements - stack'
                     obj.app.trial.plot_movement();
+                case 'Get movements - all stacks'
+                    obj.app.trial.get_all_movements();
+                case 'Plot Void size dist - all stacks'
+                    obj.app.voids.plot_void_size_distr_over_time()
+                case 'Overlay eigenvectors'
+                    obj.app.voids.overlay_eigen_vectors();
             end
             
             obj.display_warning(['Executed: ' selected_function]);

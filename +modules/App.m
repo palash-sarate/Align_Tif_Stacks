@@ -121,11 +121,11 @@ classdef App < handle
             stack_info_path = sprintf('%s//stack_info_%s.mat', parentDir, iteration);
 
             if exist(stack_info_path, 'file')
-                % obj.stack_info = load(stack_info_path);
-                % while isfield(obj.stack_info, 'stack_info')
-                %     obj.stack_info = obj.stack_info.stack_info;
-                % end
-                obj.stack_info = modules.Stackinfo(stack_info_path);
+                obj.stack_info = load(stack_info_path);
+                while isfield(obj.stack_info, 'stack_info')
+                    obj.stack_info = obj.stack_info.stack_info;
+                end
+                % obj.stack_info = modules.Stackinfo(stack_info_path);
                 WaitMessage.Send;
                 % assignin('base', 'stack_info', obj.stack_info);
             else
@@ -184,7 +184,7 @@ classdef App < handle
                 secondary_path = '';
             end
         end
-        
+
         function combine_stacks(obj, primary_path,secondary_path)
             fprintf('Combining %s and %s\n', primary_path, secondary_path);
             % get the last image name in the non cont path

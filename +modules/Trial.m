@@ -121,39 +121,47 @@ classdef Trial < handle
             obj.app.utils.save_stack_callback();
         end
         function plot_movement(obj)
-            start_frame = obj.app.stack_info.start_index;
-            end_frame = obj.app.stack_info.end_index;
-            step_size = 1;
-            obj.app.stack_info.movements = obj.get_movement(start_frame, end_frame, step_size);
+            % check if stack_info has movements field
+            if ~isfield(obj.app.stack_info,'movements')
+                fprintf("Stack %s does not have movements field\n", obj.app.path);
+                start_frame = obj.app.stack_info.start_index;
+                end_frame = obj.app.stack_info.end_index;
+                step_size = 1;
+                obj.app.stack_info.movements = obj.get_movement(start_frame, end_frame, step_size);
+            end
             % plot the movements
-            frames = start_frame:step_size:end_frame;
-            plot(obj.app.ui.controls.ax2, frames, movements, 'LineWidth', 2);
+            % frames = start_frame:step_size:end_frame;
+            cla(obj.app.ui.controls.ax2);
+            non_zero_movements = obj.app.stack_info.movements(obj.app.stack_info.movements ~= 0);
+            plot(obj.app.ui.controls.ax2, non_zero_movements, 'LineWidth', 2);
             title(obj.app.ui.controls.ax2, 'Particle Movements Over Frames');
             xlabel(obj.app.ui.controls.ax2, 'Frame Number');
             ylabel(obj.app.ui.controls.ax2, 'Movement');
             % grid(obj.app.ui.controls.ax2, 'on');
         end
-        % GPU accelerated function to compare first n images with previous image
+        % accelerated function to compare first n images with previous image
         function differences = get_movement(obj, start_frame, end_frame, step_size)
             n = end_frame - start_frame + 1;
             differences = zeros(numel(obj.app.stack_info.img_data.img_files), 1);
             % f = waitbar(0,'Please wait...','Name','Aligning stack...');
             WaitMessage = parfor_wait(n, 'Waitbar', true);
-            img_data = obj.app.stack_info.img_data;
+            img_files = obj.app.stack_info.img_data.img_files;
+            displacements = obj.app.stack_info.displacements;
             roi = [200, 750, 400, 100]; % [x, y, width, height]
-            parfor k = start_frame:end_frame
+            parfevalOnAll(@clearvars, 0);
+            parfor k = start_frame:end_frame %start_frame+20 %
                 % obj.app.utils.display_warning(num2str(k));
-                baseFileName = img_data.img_files(k-1).name;
-                fullFileName = fullfile(img_data.img_files(k-1).folder, baseFileName);
+                baseFileName = img_files(k-1).name;
+                fullFileName = fullfile(img_files(k-1).folder, baseFileName);
                 template = imread(fullFileName);
                 template = imcrop(mat2gray(template), roi);
-                displaced_img1 = imtranslate(template, - obj.app.stack_info.displacements(k-1, :));
+                displaced_img1 = imtranslate(template, - displacements(k-1, :));
                 % imshow(displaced_img1, 'Parent', obj.app.ui.controls.ax1);
-                baseFileName = img_data.img_files(k).name;
-                fullFileName = fullfile(img_data.img_files(k).folder, baseFileName);
+                baseFileName = img_files(k).name;
+                fullFileName = fullfile(img_files(k).folder, baseFileName);
                 bwImage = imread(fullFileName);
                 bwImage = imcrop(mat2gray(bwImage), roi);
-                displaced_img2 = imtranslate(bwImage, - obj.app.stack_info.displacements(k, :));
+                displaced_img2 = imtranslate(bwImage, - displacements(k, :));
 
                 difference = imabsdiff(displaced_img1, displaced_img2);
                 differences(k) = sum(difference(:));
@@ -161,6 +169,34 @@ classdef Trial < handle
             end
             WaitMessage.Destroy
             % maxDiffIndex = find(differences == max(differences));
+        end
+        function get_all_movements(obj)
+            % get all movements for all stacks
+            % loop over all stacks and get the movements
+            current_stack_index = obj.app.ui.controls.stackDropdown.Value;
+            WaitMessage = parfor_wait(length(obj.app.stack_paths) - current_stack_index, 'Waitbar', true);
+            for i = current_stack_index:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                % [N, fs] = obj.app.utils.get_info(obj.app.path);
+                % [iteration, ~] = obj.app.utils.getIteration(path);
+                obj.app.stack_info = [];
+                obj.app.load_images_callback();
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                % check if stack_info has movements field
+                if ~isfield('movements',obj.app.stack_info) && ~obj.app.forced
+                    start_frame = obj.app.stack_info.start_index;
+                    end_frame = obj.app.stack_info.end_index;
+                    step_size = 1;
+                    obj.app.stack_info.movements = obj.get_movement(start_frame, end_frame, step_size);
+                end
+                obj.app.utils.save_stack_callback();
+                WaitMessage.Send;
+            end
+            WaitMessage.Destroy;
         end
         %%%%%%%%%%%%%%%%%%%%%% TRIAL CHARACTERIZATION %%%%%%%%%%%%%%%%%%%%%%%%%%
         function is_late = is_rec_start_late(~, n,fs,iter)

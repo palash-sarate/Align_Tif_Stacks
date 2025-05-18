@@ -559,6 +559,10 @@ classdef Voids < handle
                             hist_data.(sprintf('N%d', N)) = [];
                         end
                         boundaries = void_data.B;
+                        % only keep boundaries that don't touch the edge of the image
+                        boundaries = obj.remove_holes_on_edge(boundaries, 800, 800);
+                        % remove the holes that are too small
+                        boundaries = boundaries(cellfun(@(x) length(x) > 30, boundaries));
                         areas = zeros(length(boundaries), 1);
                         for k = 1:length(boundaries)
                             boundary = boundaries{k};
@@ -576,23 +580,289 @@ classdef Voids < handle
             unique_Ns = fieldnames(hist_data);
             for i = 1:length(unique_Ns)
                 N = str2double(unique_Ns{i}(2:end));
-                boundaries = hist_data.(unique_Ns{i});
-                % only keep boundaries that don't touch the edge of the image
-                boundaries = obj.remove_holes_on_edge(boundaries, 800, 800);
-                % remove the holes that are too small
-                boundaries = boundaries(cellfun(@(x) length(x) > 30, boundaries));
-                areas = zeros(length(boundaries), 1);
-                for k = 1:length(boundaries)
-                    boundary = boundaries{k};
-                    % calculate the area of the void
-                    areas(k) = polyarea(boundary(:,2), boundary(:,1));
-                end
+                areas = hist_data.(sprintf('N%d', N));
                 areas = areas(areas < 1500);
                 % plot the histogram of voids for each N
-                histogram(ax, areas, 100, 'Normalization', 'probability', 'DisplayName', sprintf("N = %d",N), 'EdgeColor', obj.app.utils.get_color(N), 'FaceColor', obj.app.utils.get_color(N),'FaceAlpha',0.1);
+                histogram(ax, areas, 100, 'Normalization', 'count', 'DisplayName', sprintf("N = %d",N), 'EdgeColor', obj.app.utils.get_color(N), 'FaceColor', obj.app.utils.get_color(N),'FaceAlpha',0.1);
             end
             legend(ax, 'Location', 'best');
             hold(ax, 'off');
+        end
+        function plot_void_size_distr_over_time(obj)
+            % if hist_data already exists, load it
+            % hist_data = struct();
+            for i = 60%1:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                % [N, fs] = obj.app.utils.get_info(obj.app.path);
+                [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')                
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                % obj.app.utils.load_stack_info();
+                voids_struct = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'voids');
+                % assignin('base', 'voids_struct', voids_struct);
+                if ~isfield(voids_struct, 'voids')
+                    fprintf('No voids found in %s\n', obj.app.path);
+                    continue;
+                end
+                f = figure('Name', 'Void area Distribution');
+                ax = axes(f);
+                hold(ax, 'on');
+                voids = voids_struct.voids;
+                % remove empty voids
+                voids = voids(~cellfun(@isempty, voids));
+                % get length of non empty voids
+                num_voids = length(voids);
+                % make list of colors from gray colormap 
+                colormap = summer(num_voids);
+                colors = colormap(1:num_voids, :);
+                for j = 1:num_voids
+                    void_data = voids{j};
+                    if isempty(void_data)
+                        continue;
+                    end
+                    % % calculate the areas of voids in the current stack
+                    % if ~isfield(hist_data, sprintf('N%d', N))
+                    %     hist_data.(sprintf('N%d', N)) = [];
+                    % end
+                    boundaries = void_data.B;
+                    areas = zeros(length(boundaries), 1);
+                    for k = 1:length(boundaries)
+                        boundary = boundaries{k};
+                        % calculate the area of the void
+                        areas(k) = polyarea(boundary(:,2), boundary(:,1));
+                    end
+                    areas = areas(areas < 1000);
+                    % create a line plot of the histogram of voids
+                    % [N,edges] = histcounts(areas);
+                    % edges = edges(2:end) - (edges(2)-edges(1))/2;
+                    % plot(edges, N, 'Color', 'b', 'DisplayName', 'None');
+                    histogram(ax, areas, 200, 'Normalization', 'probability', 'DisplayStyle', 'stairs', 'EdgeColor', colors(j,:));
+                    % break;
+                end
+                hold(ax, 'off');
+            end
+        end
+        function [anisotropy, eigenVectors, eigenValues] = get_eigen_vectors(obj, image_idx)
+            % Assuming B, L, N, A are already computed using:
+            % [B,L,N,A] = bwboundaries(binaryImage, 'noholes');
+            % image_idx = obj.app.current_image_idx;
+            particle_locations = obj.app.particle_locator.get_particle_locations(image_idx);
+            binaryImage = obj.get_locations_image(particle_locations);
+            data = obj.app.stack_info.voids{image_idx};
+            data = obj.clean_void_data(data, size(binaryImage, 1), size(binaryImage, 2));
+            B = data.B;
+            N = length(B);
+            % Initialize arrays to store results
+            anisotropy = zeros(N, 1);
+            eigenVectors = cell(N, 1);
+            eigenValues = cell(N, 1);
+
+            for k = 1:N
+                % Extract boundary coordinates for void k
+                boundary = B{k};
+                x = boundary(:, 2); % column indices
+                y = boundary(:, 1); % row indices
+                
+                % Center the data
+                x_mean = mean(x);
+                y_mean = mean(y);
+                x_centered = x - x_mean;
+                y_centered = y - y_mean;
+                
+                % Create a 2xN matrix of the centered coordinates
+                coords = [x_centered, y_centered];
+                
+                % Compute the covariance matrix
+                C = cov(coords);
+                
+                % Compute eigenvalues and eigenvectors
+                [V, D] = eig(C);  % V: eigenvectors, D: diagonal eigenvalue matrix
+                
+                % Sort eigenvalues and vectors in descending order
+                [eigvals, idx] = sort(diag(D), 'descend');
+                V = V(:, idx); % sort eigenvectors accordingly
+                D = diag(eigvals); % sorted eigenvalues
+                
+                % Store eigenvectors and eigenvalues
+                eigenVectors{k} = V;
+                eigenValues{k} = D;
+                
+                % Compute shape anisotropy
+                lambda1 = eigvals(1);
+                lambda2 = eigvals(2);
+                anisotropy(k) = 1 - (lambda2 / lambda1);
+            end
+            obj.app.stack_info.voids{image_idx}.anisotropy = anisotropy;
+            obj.app.stack_info.voids{image_idx}.eigenVectors = eigenVectors;
+            % Display summary for each pore
+            % for k = 1:N
+            %     fprintf('Void %d:\n', k);
+            %     fprintf('  Eigenvalues: %.3f, %.3f\n', eigenValues{k}(1,1), eigenValues{k}(2,2));
+            %     fprintf('  Anisotropy: %.3f\n', anisotropy(k));
+            %     fprintf('  Major axis direction: [%.3f %.3f]\n\n', eigenVectors{k}(:,1));
+            % end
+        end
+        function overlay_eigen_vectors(obj)
+            image_idx = obj.app.current_image_idx;
+            particle_locations = obj.app.particle_locator.get_particle_locations(image_idx);
+            binaryImage = obj.get_locations_image(particle_locations);
+            data = obj.app.stack_info.voids{image_idx};
+            data = obj.clean_void_data(data, size(binaryImage, 1), size(binaryImage, 2));
+            B = data.B;
+            N = length(B);
+            cla(obj.app.ui.controls.ax2);
+            % Show the binary image
+            imshow(binaryImage, 'Parent', obj.app.ui.controls.ax2);
+            obj.overlay_boundaries(B);
+            hold on;
+
+            % Loop through each void
+            for k = 1:N
+                boundary = B{k};
+                x = boundary(:, 2); % columns
+                y = boundary(:, 1); % rows
+
+                % Compute centroid
+                x_mean = mean(x);
+                y_mean = mean(y);
+
+                % Centered coordinates
+                x_centered = x - x_mean;
+                y_centered = y - y_mean;
+                coords = [x_centered, y_centered];
+
+                % Covariance and eigen decomposition
+                C = cov(coords);
+                [V, D] = eig(C);
+                
+                % Sort eigenvalues and vectors
+                [~, idx] = sort(diag(D), 'descend');
+                V = V(:, idx);
+                
+                % Scale eigenvectors for visualization
+                scale = 10; % adjust this for visibility
+                v1 = V(:,1) * scale; % major axis
+                v2 = V(:,2) * scale; % minor axis
+
+                % Plot major and minor axis as arrows
+                quiver(x_mean, y_mean, v1(1), v1(2), 0, 'r', 'LineWidth', 2, 'MaxHeadSize', 2,'DisplayName', 'None');
+                quiver(x_mean, y_mean, -v1(1), -v1(2), 0, 'r', 'LineWidth', 2, 'MaxHeadSize', 2,'DisplayName', 'None'); % opposite direction
+
+                quiver(x_mean, y_mean, v2(1), v2(2), 0, 'b', 'LineWidth', 2, 'MaxHeadSize', 2,'DisplayName', 'None');
+                quiver(x_mean, y_mean, -v2(1), -v2(2), 0, 'b', 'LineWidth', 2, 'MaxHeadSize', 2,'DisplayName', 'None'); % opposite direction
+
+                % Optionally, mark the centroid
+                plot(x_mean, y_mean, 'go', 'MarkerSize', 5, 'LineWidth', 2,'DisplayName', 'None');
+            end
+
+            hold off;
+            title('Eigenvectors (red: major axis, blue: minor axis)');
+            % save the ax2 axis as voids.eps file
+            exportgraphics(obj.app.ui.controls.ax2, 'F://shake_table_data//Sauiba//voids_eigenvectors.eps', 'ContentType', 'vector');
+        end
+        function analyze_2d_fabric_frame(obj, image_idx)
+            % Input: majorEigenVectors - Nx2 matrix of 2D major axis vectors for each void
+            % Each row should be a unit vector: [vx, vy]
+            [~, eigenVectors, ~] = obj.get_eigen_vectors(image_idx);
+            N = length(eigenVectors);
+            majorEigenVectors = zeros(N, 2);
+
+            for i = 1:N
+                majorEigenVectors(i, :) = eigenVectors{i}(:,1)';  % major axis eigenvector
+            end
+
+            % Normalize the vectors (just in case)
+            norms = sqrt(sum(majorEigenVectors.^2, 2));
+            majorEigenVectors = majorEigenVectors ./ norms;
+
+            % --- Fabric tensor computation ---
+            fabric = zeros(2);
+            for i = 1:size(majorEigenVectors, 1)
+                v = majorEigenVectors(i, :)';
+                fabric = fabric + (v * v');  % outer product
+            end
+            fabric = fabric / size(majorEigenVectors, 1);
+
+            % --- Deviatoric fabric ---
+            trace_fabric = trace(fabric);
+            hydro = trace_fabric / 2;
+            dev_fabric = fabric - hydro * eye(2);
+            f_dev = dev_fabric * (4);  % scaling factor (similar to 3D: 15/2)
+
+            % --- Anisotropy norm (Frobenius norm of deviatoric tensor) ---
+            norm_dev = sqrt((2) * sum(sum(f_dev .* f_dev)));
+            % fprintf('Anisotropy norm (2D): %.4f\n', norm_dev);
+
+            % --- Orientation distribution plot (polar plot) ---
+            theta = linspace(0, pi, 180);  % angles in radians (0 to π for axis-aligned symmetry)
+            radius = zeros(size(theta));
+            for i = 1:length(theta)
+                v = [cos(theta(i)); sin(theta(i))];
+                radius(i) = (1 / pi) * (1 + v' * f_dev * v);  % 2D analogue of ODF
+            end
+
+            % --- Polar plot ---
+            % figure;
+            % polarplot(obj.app.ui.controls.ax2, [theta, theta + pi], [radius, radius], 'r-', 'LineWidth', 2);  % symmetric about π
+            % title('2D Orientation Distribution (Major Axis)');
+            % ax = gca;
+            % ax.ThetaZeroLocation = 'top';
+            % ax.ThetaDir = 'clockwise';
+            % add to stack info
+            obj.app.stack_info.voids{image_idx}.fabric = fabric;
+            obj.app.stack_info.voids{image_idx}.dev_fabric = dev_fabric;
+            obj.app.stack_info.voids{image_idx}.f_dev = f_dev;
+            obj.app.stack_info.voids{image_idx}.norm_dev = norm_dev;
+            obj.app.stack_info.voids{image_idx}.radius = radius;
+            obj.app.stack_info.voids{image_idx}.theta = theta;
+        end
+        function analyze_2d_fabric_stack(obj)
+            % Create a progress bar
+            h = waitbar(0, 'Processing stack');
+            n = length(obj.app.stack_info.voids);
+            voids = obj.app.stack_info.voids;
+            
+            for i = 1:n
+                % Check if the voids data is empty
+                if isempty(voids{i})
+                    progress = i / n;
+                    waitbar(progress, h);
+                    continue; % Skip this iteration if voids data is empty
+                end
+                % Call the analyze_2d_fabric_frame function for each image
+                obj.analyze_2d_fabric_frame(i);
+                % Update progress bar
+                progress = i / n;
+                waitbar(progress, h);
+            end
+            % save the stack info
+            obj.app.utils.save_stack_callback();
+            close(h);
+        end
+        function analyze_2d_fabric_stacks(obj)
+            % Create a progress bar
+            h = waitbar(0, 'Processing stacks');
+            % loop over all the stacks
+            for i = 1:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                % [N, fs] = obj.app.utils.get_info(path);
+                % [iteration, ~] = obj.app.utils.getIteration(path);
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                obj.app.utils.load_stack_info();
+
+                obj.analyze_2d_fabric_stack();
+                % Update progress bar
+                progress = i / length(obj.app.stack_paths);
+                waitbar(progress, h);
+            end
+            close(h);
         end
     end
 end
