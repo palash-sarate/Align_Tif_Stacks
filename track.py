@@ -6,7 +6,7 @@ import freud
 import numpy as np
 
 
-def find_particle_locations(image_path, diam=21, max_iterations=10, minmass=1, separation=15, save_path="particles.csv"):
+def find_particle_locations(image_path, diam=5, max_iterations=10, minmass=800, separation=5, save_path="particles.csv",overlay=False):
     """
     Find particle locations in an image using trackpy.
 
@@ -24,6 +24,10 @@ def find_particle_locations(image_path, diam=21, max_iterations=10, minmass=1, s
     """
     diameter = [diam, diam]
     image = plt.imread(image_path)
+    # preprocess the image (threshold, denoise, etc.) if necessary
+    # threshold = 30  # adjust based on your images
+    # image[image < threshold] = 0
+    
     # print(image.shape)
     # Locate particles (adjust diameter based on your particles' size)
     particles = tp.locate(
@@ -37,9 +41,16 @@ def find_particle_locations(image_path, diam=21, max_iterations=10, minmass=1, s
     # save the csv file
     with open(save_path, "w") as f:
         f.write(particles_csv)
-        
-    return True
-    # return particles
+    
+    if not overlay:
+        return True
+    
+    # overlay the particles on the image
+    fig, ax = plt.subplots()
+    tp.annotate(particles, image, ax=ax, plot_style={'markersize': 0.3})
+    ax.set_xlim(300, 800)
+    ax.set_ylim(200, 800)
+    plt.show()
 
 def calculate_rdf(particles_path, r_max=100, dr=1):
     """
@@ -144,6 +155,16 @@ def compute_bond_orientation_order(particles_path= "F:\\shake_table_data\\N4\\4h
         
     return order_parameter
 
+#%% test find_particle_locations function
+# minmass=800
+# image_path = "F:\\shake_table_data\\N4\\4hz_hopperflow\\60deg\\10cm\\1\\1_00002.TIF"
+# find_particle_locations(image_path, diam=5, max_iterations=10,
+#                         minmass=minmass, separation=5, 
+#                         save_path="particles.csv",overlay=True)
+# image_path = "F:\\shake_table_data\\N4\\4hz_hopperflow\\60deg\\10cm\\1\\1_00968.TIF"
+# find_particle_locations(image_path, diam=5, max_iterations=10,
+#                         minmass=minmass, separation=5, 
+#                         save_path="particles.csv",overlay=True)
 #%% test compute_ql function
 # psi = compute_ql()
 # # plot histogram of psi

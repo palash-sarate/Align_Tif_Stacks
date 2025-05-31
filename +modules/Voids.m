@@ -1,6 +1,7 @@
 classdef Voids < handle
     properties
         app
+        voids_data
     end
     methods
         function obj = Voids(app)
@@ -282,9 +283,9 @@ classdef Voids < handle
                     continue;
                 end
                 obj.app.utils.load_stack_info();
-
+                voids = obj.app.stack_info.voids;
                 % get number of non empty voids in the stack
-                num_voids = sum(~cellfun(@isempty, obj.app.stack_info.voids));
+                num_voids = sum(~cellfun(@isempty, voids));
 
                 void_area = zeros(num_voids, 1);
                 void_area_frac = zeros(num_voids, 1);
@@ -293,8 +294,8 @@ classdef Voids < handle
 
                 % loop over voids
                 temp_idx = 1;
-                for j = 1:length(obj.app.stack_info.voids)
-                    void_data = obj.app.stack_info.voids{j};
+                for j = 1:length(voids)
+                    void_data = voids{j};
                     if isempty(void_data)
                         continue;
                     end
@@ -305,8 +306,8 @@ classdef Voids < handle
                     timeStamps{temp_idx} = obj.app.timer.predict_timeStamp(j);
                     temp_idx = temp_idx + 1;
                 end
-                voids_data = table(void_area, void_area_frac, image_indexes, timeStamps);
-                all_data.(sprintf('N%d',N)).(sprintf('f%d',fs)).(sprintf('iter%s',iteration)) = voids_data;
+                voids_table = table(void_area, void_area_frac, image_indexes, timeStamps);
+                all_data.(sprintf('N%d',N)).(sprintf('f%d',fs)).(sprintf('iter%s',iteration)) = voids_table;
                 % Update progress bar
                 progress = i / length(obj.app.stack_paths);
                 waitbar(progress, h);
@@ -316,9 +317,9 @@ classdef Voids < handle
             close(h);
         end
         
-        function visualize_voids_data(obj)
+        function visualize_voids_characteristics(obj)
             % load the voids data from results folder
-            voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
             f = figure('Name', 'Area frac Visualization');
             ax = axes(f);
             hold(ax, 'on');
@@ -346,7 +347,7 @@ classdef Voids < handle
                     fprintf('Skipping %s\n', obj.app.path);           
                     continue;
                 end
-                data = voids_data.all_data.(sprintf('N%d',N)).(sprintf('f%d',fs)).(sprintf('iter%s',iteration));
+                data = obj.voids_data.all_data.(sprintf('N%d',N)).(sprintf('f%d',fs)).(sprintf('iter%s',iteration));
                 plot(ax3, N, data.void_area_frac(1), 'o', 'Color',...
                     obj.app.utils.get_color(N), 'DisplayName', 'None');
                 plot(ax, data.image_indexes, data.void_area_frac, 'Color',...
@@ -387,13 +388,10 @@ classdef Voids < handle
             exportgraphics(ax, sprintf('%s//voids_area_frac.png', save_dir));
             exportgraphics(ax2, sprintf('%s//voids_area.png', save_dir));
             exportgraphics(ax3, sprintf('%s//voids_initial_area_frac.png', save_dir));
-
-            plot_size_distribution(obj);
-            plot_area_fraction(obj);
         end
-        function plot_area_fraction(obj)
+        function plot_void_area_fraction_over_time_stacks(obj)
             % Load the voids data from results folder
-            voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
             unique_Ns = [4, 12, 24, 48];
             
             % Loop through each unique N to create separate plots
@@ -428,10 +426,10 @@ classdef Voids < handle
                     end
                     
                     if N == N_val
-                        data = voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration));
+                        data = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration));
                         normalized_x = ((data.image_indexes-min(data.image_indexes)) / max(data.image_indexes)) * 100;
                         plot(ax, normalized_x, data.void_area_frac, 'Color', ...
-                            obj.app.utils.get_color(N));
+                            obj.app.utils.get_color(fs));
                     end
                 end
                 
@@ -524,7 +522,7 @@ classdef Voids < handle
             data.B = data.B(cellfun(@(x) length(x) > 30, data.B));
         end
         function plot_size_distribution(obj)
-            f = figure('Name', 'Area frac Visualization');
+            f = figure('Name', 'Voids Size Distribution');
             ax = axes(f);
             hold(ax, 'on');
             % if hist_data already exists, load it
@@ -575,6 +573,8 @@ classdef Voids < handle
                     fprintf('collected voids in %s\n', obj.app.path);
                 end
                 assignin('base', 'hist_data', hist_data);
+                % save the voids data to results folder);
+                save('F:\shake_table_data\Results\voids_hist_data.mat', 'hist_data');
             end
             % loop over the hist_data and plot the histogram of voids for each N
             unique_Ns = fieldnames(hist_data);
@@ -863,6 +863,121 @@ classdef Voids < handle
                 waitbar(progress, h);
             end
             close(h);
+        end
+        function plot_anisotropy_and_angle_evolution_stack(obj)
+            % Ensure save directory exists
+            save_dir = fullfile(obj.app.stack_info.parentDir,sprintf("anisotropy_angle_frames_%s",obj.app.stack_info.iteration));
+
+            if ~exist(save_dir, 'dir')
+                mkdir(save_dir);
+            end
+
+            n_frames = length(obj.app.stack_info.voids);
+            h1 = waitbar(0, 'Processing stack');
+            for i = 1:n_frames
+                void_data = obj.app.stack_info.voids{i};
+                if isempty(void_data) || ~isfield(void_data, 'anisotropy') || ~isfield(void_data, 'theta') || ~isfield(void_data, 'radius')
+                    continue;
+                end
+
+                % Prepare figure
+                f = figure('Visible', 'off', 'Position', [100, 100, 1000, 400]);
+                
+                % --- Anisotropy plot ---
+                subplot(1,2,1);
+                if isfield(void_data, 'anisotropy')
+                    histogram(void_data.anisotropy, 20, 'FaceColor', [0.2 0.6 0.8]);
+                    xlabel('Anisotropy');
+                    ylabel('Count');
+                    title(sprintf('Anisotropy Distribution (Frame %d)', i));
+                    xlim([0 1]);
+                end
+                
+                % --- Angle distribution (polar plot) ---
+                subplot(1,2,2);
+                if isfield(void_data, 'theta') && isfield(void_data, 'radius')
+                    theta = [void_data.theta, void_data.theta+pi];
+                    radius = [void_data.radius, void_data.radius];
+                    polarplot(theta, radius, 'r-', 'LineWidth', 2);
+                    title('Angle Distribution');
+                end
+
+                % Save the figure
+                filename = fullfile(save_dir, sprintf('anisotropy_angle_%04d.png', i));
+                exportgraphics(f, filename);
+                close(f);
+                progress = i / n_frames;
+                waitbar(progress, h1);
+                % break;
+            end
+            close(h1);
+        end
+        function overlay_first_last_particle_locations(obj)
+
+            % Ensure save directory exists
+            save_dir = fullfile('F:', 'shake_table_data', 'Results', 'overlay_first_last');
+            if ~exist(save_dir, 'dir')
+                mkdir(save_dir);
+            end
+        
+            for i = 1:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                [N, fs] = obj.app.utils.get_info(obj.app.path);
+                [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
+        
+                % Load stack_info
+                obj.app.utils.load_stack_info();
+                stack_info = obj.app.stack_info;
+        
+                % Find first and last image with non-empty particle locations
+                first_idx = [];
+                last_idx = [];
+                for idx = stack_info.start_index:stack_info.end_index
+                    ploc = obj.app.stack_info.particle_locations{idx};
+
+                    if ~isempty(ploc)
+                        if isempty(first_idx)
+                            first_idx = idx;
+                        end
+                        last_idx = idx;
+                    end
+                end
+                if isempty(first_idx) || isempty(last_idx)
+                    fprintf('No valid particle locations in %s\n', obj.app.path);
+                    continue;
+                end
+                fprintf('First index: %d, Last index: %d\n', first_idx, last_idx);
+                % Load images
+                img_files = stack_info.img_data.img_files;
+                img1 = imread(fullfile(img_files(first_idx).folder, img_files(first_idx).name));
+                img2 = imread(fullfile(img_files(last_idx).folder, img_files(last_idx).name));
+                fprintf('Found images for first index %d and last index %d\n', first_idx, last_idx);
+                % Get particle locations
+                ploc1 = obj.app.particle_locator.get_particle_locations(first_idx);
+                ploc2 = obj.app.particle_locator.get_particle_locations(last_idx);
+                fprintf('Found particle locations for first index %d and last index %d\n', first_idx, last_idx);
+                % Create figure
+                f = figure('Visible', 'off', 'Position', [100, 100, 1000, 500]);
+                subplot(1,2,1);
+                imshow(img1, []);
+                hold on;
+                plot(ploc1.x, ploc1.y, 'ro', 'MarkerSize', 3, 'LineWidth', 0.5);
+                title(sprintf('First (idx=%d)', first_idx));
+                hold off;
+                
+                subplot(1,2,2);
+                imshow(img2, []);
+                hold on;
+                plot(ploc2.x, ploc2.y, 'go', 'MarkerSize', 3, 'LineWidth', 0.5);
+                title(sprintf('Last (idx=%d)', last_idx));
+                hold off;
+                fprintf('Overlaying particle locations for first and last images in %s\n', obj.app.path);
+                % Save overlay image
+                save_name = sprintf('overlay_first_last_N%d_f%d_iter%s.png', N, fs, iteration);
+                exportgraphics(f, fullfile(save_dir, save_name));
+                close(f);
+            end
         end
     end
 end

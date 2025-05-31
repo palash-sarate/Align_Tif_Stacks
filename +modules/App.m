@@ -93,6 +93,7 @@ classdef App < handle
                         subFolders = subFolders([subFolders.isdir]);  % Keep only directories
                         % remove directories that have voids_images in them
                         subFolders = subFolders(~contains({subFolders.name}, 'voids_images'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~contains({subFolders.name}, 'anisotropy_angle_frames'));  % Remove directories that contain 'voids_images'
                         subFolders = subFolders(~ismember({subFolders.name}, {'.', '..'}));  % Remove '.' and '..' directories
 
                         for k = 1:length(subFolders)

@@ -7,7 +7,7 @@ classdef Particle_locator < handle
             obj.app = app;
             obj.addUi();
         end
-        function addUi(obj)
+        function addUi(~)
             % Add UI elements for particle detection
             % obj.app.ui.controls.particleButton = uicontrol('Style', 'pushbutton', 'String', 'Detect Particles', ...
             %     'Position', [20, 20, 100, 30], 'Callback', @(src, event) obj.detect_particles_callback(src, event));
@@ -16,7 +16,7 @@ classdef Particle_locator < handle
         %%%%%%%%%%%%%%%%%%%%%% PARTICLE LOCATIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%
         function particle_locations = get_particle_locations(obj, image_idx)
             % check if obj.app.stack_info.particle_locations is a table
-            if isfield(obj.app.stack_info, 'particle_locations') && istable(obj.app.stack_info.particle_locations)
+            if ~obj.app.forced && isfield(obj.app.stack_info, 'particle_locations') && istable(obj.app.stack_info.particle_locations)
                 fprintf('Particle locations are in old format\n');
                 % convert to cell array
                 obj.convert_to_cellArray();
@@ -45,10 +45,16 @@ classdef Particle_locator < handle
                 particle_locations = obj.app.stack_info.particle_locations{image_idx};
             end
             % clean up the particle locations
+            % image_path = fullfile(obj.app.stack_info.img_data.img_files(image_idx).folder,...
+            %     obj.app.stack_info.img_data.img_files(image_idx).name);
+            % image = mat2gray(imread(image_path));
+            % figure();
+            % imshow(image);
             particle_locations = obj.mask_particle_locations(particle_locations);
         end
         function particle_locations = mask_particle_locations(obj, particle_locations)
-              % remove the locations that are in the mask
+            minmass = 500;
+            % remove the locations that are in the mask
             if obj.app.stack_info.masked
                 % fprintf('Removing particle locations in the mask\n');
                 mask = obj.app.stack_info.mask;
@@ -59,9 +65,13 @@ classdef Particle_locator < handle
                 rows_to_remove = [];
                 for i = 1:length(x)
                     if mask(round(y(i)), round(x(i))) == 1
-                        % fprintf('Removing particle location (%d, %d)\n',round(y(i)), round(x(i)));
                         rows_to_remove = [rows_to_remove, i];
                     end
+                end
+                % Remove particles with mass less than minmass
+                if ismember('mass', particle_locations.Properties.VariableNames)
+                    low_mass_idx = find(particle_locations.mass < minmass);
+                    rows_to_remove = unique([rows_to_remove, low_mass_idx']);
                 end
                 % remove the rows from the particle locations
                 particle_locations(rows_to_remove, :) = [];
