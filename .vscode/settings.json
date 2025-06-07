@@ -71,6 +71,7 @@
         "parfeval",
         "parfor",
         "parpool",
+        "polarhistogram",
         "polarplot",
         "polyarea",
         "popupmenu",

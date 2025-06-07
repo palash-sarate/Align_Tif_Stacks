@@ -46,7 +46,7 @@ function [anisotropy, eigenVectors, eigenValues] = get_eigen_vectors(obj, image_
         % Compute shape anisotropy
         lambda1 = eigvals(1);
         lambda2 = eigvals(2);
-        anisotropy(k) = 1 - (lambda2 / lambda1); %shape anisotropy
+        anisotropy(k) = 1 - (lambda2 / lambda1);
     end
     obj.app.stack_info.voids{image_idx}.anisotropy = anisotropy;
     obj.app.stack_info.voids{image_idx}.eigenVectors = eigenVectors;

@@ -41,7 +41,8 @@ classdef Voids < handle
                 fprintf('Voids already exist in this stack. Skipping %s\n', obj.app.path);
                 return;
             end            
-
+            % clear the voids field in the stack_info
+            obj.app.stack_info.voids = cell(length(obj.app.stack_info.img_data.img_files), 1);
             h2 = waitbar(0, 'Processing stack');
             % select equal spaced 100 frames to process from stack
             images_to_process = round(linspace(obj.app.stack_info.start_index, obj.app.stack_info.end_index, 100));
@@ -104,12 +105,15 @@ classdef Voids < handle
         function draw_boundaries(obj, B)
             colors=['b' 'g' 'r' 'c' 'm' 'y'];
             for k=1:length(B)
-              boundary = B{k};
-              cidx = mod(k,length(colors))+1;
-              plot(obj.app.ui.controls.ax2, boundary(:,2), boundary(:,1),...
-                   colors(cidx),'LineWidth', 2, 'HandleVisibility', 'off');
+                boundary = B{k};
+                cidx = mod(k,length(colors))+1;
+                % Fill the hole with black
+                % fill(obj.app.ui.controls.ax2, 800 - boundary(:,2), 800 - boundary(:,1), ...
+                %     'k', 'EdgeColor', 'none', 'HandleVisibility', 'off');
+                plot(obj.app.ui.controls.ax2, boundary(:,2), boundary(:,1),...
+                    colors(cidx), 'LineWidth', 2, 'HandleVisibility', 'off');
             
-              %randomize text position for better visibility
+            %randomize text position for better visibility
             %   rndRow = ceil(length(boundary)/(mod(rand*k,7)+1));
             %   col = boundary(rndRow,2); row = boundary(rndRow,1);
             %   h = text(col+1, row-1, num2str(L(row,col)));
@@ -198,15 +202,19 @@ classdef Voids < handle
                     % fprintf('No voids found in frame %d of %s\n', i, obj.app.path);
                     continue;
                 end
+                particle_locations = obj.app.particle_locator.get_particle_locations(image_idx);
+                bw_image = obj.get_locations_image(particle_locations);
                 % clean up the void data
                 void_data = obj.clean_void_data(void_data, img_height, img_width);
                 % calculate the area fraction of voids in the image                
                 void_area = obj.calculate_void_area(void_data);
+                chain_area = sum(bw_image(:) == 0);
                 % Radial distribution function of voids
                 % save the void data to the app.stack_info.voids at the current index
                 obj.app.stack_info.voids{image_idx}.void_area = void_area;
                 obj.app.stack_info.voids{image_idx}.void_area_frac = void_area / total_area;
-
+                obj.app.stack_info.voids{image_idx}.chain_area = chain_area;
+                obj.app.stack_info.voids{image_idx}.chain_area_frac = chain_area / total_area;
                 % rdf = obj.get_rdf(void_data, img_height, img_width);
                 % obj.app.stack_info.voids{image_idx}.rdf = rdf;
 
@@ -316,7 +324,6 @@ classdef Voids < handle
             save('F:\shake_table_data\Results\voids_data.mat', 'all_data');
             close(h);
         end
-        
         function visualize_voids_characteristics(obj)
             % load the voids data from results folder
             obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
@@ -421,7 +428,7 @@ classdef Voids < handle
                     end
                     
                     if ~empty.empty
-                        fprintf('Skipping %s\n', obj.app.path);
+                        fprintf('Skipping as empty %s\n', obj.app.path);
                         continue;
                     end
                     
@@ -433,8 +440,19 @@ classdef Voids < handle
                     end
                 end
                 
-                % Add legend and labels
-                % legend(ax, 'Location', 'best');
+                % Add legend and labels for unique fs
+                % Get all unique fs values for this N
+                fs_list = [4,6,8,10,12,14,16,18,20];
+                unique_fs = unique(fs_list);
+
+                % Create legend handles with correct colors for each fs
+                legend_handles = gobjects(1, numel(unique_fs));
+                legend_entries = cell(1, numel(unique_fs));
+                for k = 1:numel(unique_fs)
+                    legend_handles(k) = plot(ax, NaN, NaN, 'Color', obj.app.utils.get_color(0,unique_fs(k),max(unique_fs)), 'LineWidth', 2);
+                    legend_entries{k} = sprintf('fs = %d', unique_fs(k));
+                end
+                legend(ax, legend_handles, legend_entries, 'Location', 'best');
                 xlabel(ax, 'Percent Completion (%)');
                 ylabel(ax, 'Area Fraction');
                 title(ax, sprintf('Area Fraction Visualization for N = %d', N_val));
@@ -448,9 +466,9 @@ classdef Voids < handle
                 exportgraphics(ax, sprintf('%s//voids_area_frac_N%d.png', save_dir, N_val));
             end
         end
-        function create_images(obj)
+        function create_void_images(obj)
             h = waitbar(0, 'Processing stacks');
-            for i = 1%:length(obj.app.stack_paths)
+            for i = 72%30:length(obj.app.stack_paths)
                 set(obj.app.ui.controls.stackDropdown, 'Value', i);
                 obj.app.path = obj.app.stack_paths{i};
                 % [N, fs] = obj.app.utils.get_info(obj.app.path);
@@ -459,43 +477,47 @@ classdef Voids < handle
                     fprintf('Skipping %s\n', obj.app.path);           
                     continue;
                 end
-
                 obj.app.utils.load_stack_info();
                 start_frame_timestamp = obj.app.timer.time_2_sec(obj.app.stack_info.timestamps{obj.app.stack_info.start_index});
-                first_image = imread(fullfile(obj.app.stack_info.img_data.img_files(obj.app.stack_info.start_index).folder,...
-                 obj.app.stack_info.img_data.img_files(obj.app.stack_info.start_index).name));
-                [height, width, ~] = size(first_image);
-                % Desired height for the overlay image
-                desired_height = 100; % Adjust as needed
-                scale_factor = desired_height / height;
-                overlay_width = round(width * scale_factor);
-                overlay_height = round(height * scale_factor);
-                for j = 1:10:length(obj.app.stack_info.voids)
+
+                for j = 24821%1:10:length(obj.app.stack_info.voids)
                     voids = obj.app.stack_info.voids{j};
                     if isempty(voids)
                         continue;
                     end
+                    fprintf("processing voids for image %d\n", j);
                     particle_locations = obj.app.particle_locator.get_particle_locations(j);
                     % find the white holes in the image
                     bw_img = obj.get_locations_image(particle_locations);
+
+                    %%%%%%%%%%%%%%%%% find the voids in the image
+                    % [B,~,~,~] = bwboundaries(bw_img, 'noholes');
+                    % % add the B L N A to the app.stack_info.voids at the current index
+                    % % obj.append_voids(B, L, N, A, obj.app.current_image_idx);
+
+                    % % only keep boundaries that don't touch the edge of the image
+                    % B = obj.remove_holes_on_edge(B, size(bw_img, 1), size(bw_img, 2));
+                    % % remove the holes that are too small
+                    % B = B(cellfun(@(x) length(x) > 30, B));
+                    %%%%%%%%%%%%%%%%%
+                    
                     % find the voids in the image
-                    voids = obj.clean_void_data(voids, size(bw_img, 1), size(bw_img, 2));
-                    B = voids.B;
+                    clean_voids = obj.clean_void_data(voids, size(bw_img, 1), size(bw_img, 2));
 
                     % plot the bw image on ax2
                     cla(obj.app.ui.controls.ax2);
-                    % plot(obj.app.ui.controls.ax2, particle_locations.x, 800 - particle_locations.y, 'ko', 'MarkerFaceColor', 'k', 'MarkerSize', 5);
-                    obj.overlay_boundaries(B);
-                    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-                    % add the original image to the ax2 to the bottom right corner
-                    image = imread(fullfile(obj.app.stack_info.img_data.img_files(j).folder, obj.app.stack_info.img_data.img_files(j).name));
-                    resizedGray = imresize(image, [overlay_height, overlay_width]);
-                    startRow = height - overlay_height + 1;
-                    startCol = width - overlay_width + 1;
-                    endRow = height;
-                    endCol = width;
-                    bw_img(startRow:endRow, startCol:endCol) = resizedGray;
                     imshow(bw_img, 'Parent', obj.app.ui.controls.ax2);
+                    plot(obj.app.ui.controls.ax2, particle_locations.x, 800 - particle_locations.y, 'ko', 'MarkerFaceColor', 'k', 'MarkerSize', 5);
+                    obj.overlay_boundaries(clean_voids.B);
+                    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                    % % add the original image to the ax2 to the bottom right corner
+                    % image = imread(fullfile(obj.app.stack_info.img_data.img_files(j).folder, obj.app.stack_info.img_data.img_files(j).name));
+                    % resizedGray = imresize(image, [overlay_height, overlay_width]);
+                    % startRow = height - overlay_height + 1;
+                    % startCol = width - overlay_width + 1;
+                    % endRow = height;
+                    % endCol = width;
+                    % bw_img(startRow:endRow, startCol:endCol) = resizedGray;
                     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
                     % add timestamp to the image
                     timeStamp = obj.app.timer.predict_timeStamp(j);
@@ -504,6 +526,13 @@ classdef Voids < handle
                         'String', sprintf("%.2f Sec", secs-start_frame_timestamp), ...
                         'Color', 'black', 'FontSize', 18, 'HorizontalAlignment', 'right');
                     % save the image
+                    % remove axes
+                    obj.app.ui.controls.ax2.XColor = 'none';
+                    obj.app.ui.controls.ax2.YColor = 'none';
+                    % Set the axis to 800x800 pixels before saving
+                    set(obj.app.ui.controls.ax2, 'Units', 'pixels', 'Position', [1 1 800 800]);
+                    set(gcf, 'Units', 'pixels', 'Position', [100 100 800 800]);
+
                     save_dir = sprintf("%s//voids_images_%s//", parentDir, iteration);
                     if ~exist(save_dir, 'dir')
                         mkdir(save_dir);
@@ -667,8 +696,8 @@ classdef Voids < handle
                 y = boundary(:, 1); % row indices
                 
                 % Center the data
-                x_mean = mean(x);
-                y_mean = mean(y);
+                x_mean = sum(x)/polyarea(x, y);
+                y_mean = sum(y)/polyarea(x, y);
                 x_centered = x - x_mean;
                 y_centered = y - y_mean;
                 
@@ -774,7 +803,7 @@ classdef Voids < handle
                 majorEigenVectors(i, :) = eigenVectors{i}(:,1)';  % major axis eigenvector
             end
 
-            % Normalize the vectors (just in case)
+            % Normalize the vectors
             norms = sqrt(sum(majorEigenVectors.^2, 2));
             majorEigenVectors = majorEigenVectors ./ norms;
 
@@ -782,18 +811,18 @@ classdef Voids < handle
             fabric = zeros(2);
             for i = 1:size(majorEigenVectors, 1)
                 v = majorEigenVectors(i, :)';
-                fabric = fabric + (v * v');  % outer product
+                fabric = fabric + (v * v');  % outer product dyadic product
             end
-            fabric = fabric / size(majorEigenVectors, 1);
+            fabric = fabric / size(majorEigenVectors, 1); % average
 
             % --- Deviatoric fabric ---
             trace_fabric = trace(fabric);
             hydro = trace_fabric / 2;
             dev_fabric = fabric - hydro * eye(2);
-            f_dev = dev_fabric * (4);  % scaling factor (similar to 3D: 15/2)
+            f_dev = dev_fabric * (3/2);  % scaling factor (similar to 3D: 15/2)
 
             % --- Anisotropy norm (Frobenius norm of deviatoric tensor) ---
-            norm_dev = sqrt((2) * sum(sum(f_dev .* f_dev)));
+            norm_dev = sqrt((3/2) * sum(sum(f_dev .* f_dev)));
             % fprintf('Anisotropy norm (2D): %.4f\n', norm_dev);
 
             % --- Orientation distribution plot (polar plot) ---
@@ -818,10 +847,11 @@ classdef Voids < handle
             obj.app.stack_info.voids{image_idx}.norm_dev = norm_dev;
             obj.app.stack_info.voids{image_idx}.radius = radius;
             obj.app.stack_info.voids{image_idx}.theta = theta;
+            % fprintf('Processed image %d/%d\n', image_idx, length(obj.app.stack_info.voids));
         end
         function analyze_2d_fabric_stack(obj)
             % Create a progress bar
-            h = waitbar(0, 'Processing stack');
+            h = waitbar(0, 'Processing stack for 2D fabric analysis');
             n = length(obj.app.stack_info.voids);
             voids = obj.app.stack_info.voids;
             
@@ -844,7 +874,7 @@ classdef Voids < handle
         end
         function analyze_2d_fabric_stacks(obj)
             % Create a progress bar
-            h = waitbar(0, 'Processing stacks');
+            h = waitbar(0, 'Processing stacks for 2D fabric analysis');
             % loop over all the stacks
             for i = 1:length(obj.app.stack_paths)
                 set(obj.app.ui.controls.stackDropdown, 'Value', i);
@@ -865,50 +895,278 @@ classdef Voids < handle
             close(h);
         end
         function plot_anisotropy_and_angle_evolution_stack(obj)
+            % Load the pooled voids data from results folder
+            if isempty(obj.voids_data)
+                obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            end
+            [N, fs] = obj.app.utils.get_info(obj.app.path);
+            iteration = obj.app.stack_info.iteration;
+            parentDir = obj.app.stack_info.parentDir;
             % Ensure save directory exists
-            save_dir = fullfile(obj.app.stack_info.parentDir,sprintf("anisotropy_angle_frames_%s",obj.app.stack_info.iteration));
-
+            save_dir = fullfile(parentDir,sprintf("anisotropy_angle_frames_%s",iteration));
             if ~exist(save_dir, 'dir')
                 mkdir(save_dir);
             end
-
+            void_orientation_save_dir = fullfile(parentDir,sprintf("void_orientation_%s",iteration));
+            if ~exist(void_orientation_save_dir, 'dir')
+                mkdir(void_orientation_save_dir);
+            end
+            void_anisotropy_hist_save_dir = fullfile(parentDir,sprintf("anisotropy_hist_%s",iteration));
+            if ~exist(void_anisotropy_hist_save_dir, 'dir')
+                mkdir(void_anisotropy_hist_save_dir);
+            end
             n_frames = length(obj.app.stack_info.voids);
-            h1 = waitbar(0, 'Processing stack');
+            voids = obj.app.stack_info.voids;
+            fprintf('Processing %d frames for anisotropy_and_angle_evolution\n', n_frames);
+            total_area = sum(sum(~obj.app.stack_info.mask));
+            % check if the non empty voids data have anisotropy, radius and theta fields
+            % Find the first and last non-empty voids index
+            first_valid = [];
+            first_valid_index = [];
+            % last_valid = [];
+            last_valid_index = [];
+            for idx = 1:length(voids)
+                if ~isempty(voids{idx})
+                    if isempty(first_valid)
+                        first_valid = voids{idx};
+                        first_valid_index = idx;
+                    end
+                    % last_valid = voids{idx};
+                    last_valid_index = idx;
+                end
+            end
+            if ~isempty(first_valid) && isfield(first_valid, 'anisotropy') && isfield(first_valid, 'theta') && isfield(first_valid, 'radius')
+                % All fields exist
+                disp('First non-empty voids data has all required fields.');
+            else
+                disp('First non-empty voids data is missing one or more required fields.');
+                disp('Analyzing 2D fabric stack...');
+                obj.analyze_2d_fabric_stack();
+                % Re-check after analysis
+                voids = obj.app.stack_info.voids;
+                first_valid = voids{first_valid_index};
+                if ~isfield(first_valid, 'anisotropy') || ~isfield(first_valid, 'theta') || ~isfield(first_valid, 'radius')
+                    error('Required fields are still missing after analysis.');
+                end
+                disp('All required fields are now present.');
+            end
+
+            anisotropy_norm = [];anisotropy_norm_frame = [];
+            start_frame_timestamp = obj.app.timer.time_2_sec(obj.app.stack_info.timestamps{obj.app.stack_info.start_index});
+            data = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration));
+            normalized_x = ((data.image_indexes-min(data.image_indexes)) / max(data.image_indexes)) * 100;
+            chain_area_frac = zeros(1, numel(data.image_indexes));
+                        
+            h1 = waitbar(0, 'Processing stack for anisotropy and angle evolution');
             for i = 1:n_frames
-                void_data = obj.app.stack_info.voids{i};
+                void_data = voids{i};
                 if isempty(void_data) || ~isfield(void_data, 'anisotropy') || ~isfield(void_data, 'theta') || ~isfield(void_data, 'radius')
                     continue;
                 end
-
+                % fprintf('Processing frame %d/%d\n', i, n_frames);
+                void_data = obj.clean_void_data(void_data, 800, 800);
+                timeStamp = obj.app.stack_info.timestamps{i};
+                secs = obj.app.timer.time_2_sec(timeStamp);
+                timestamp_text = sprintf("%.0f Sec", secs-start_frame_timestamp);
+                particle_locations = obj.app.particle_locator.get_particle_locations(i);
+                bw_image = obj.get_locations_image(particle_locations);
                 % Prepare figure
-                f = figure('Visible', 'off', 'Position', [100, 100, 1000, 400]);
-                
-                % --- Anisotropy plot ---
-                subplot(1,2,1);
+                f = figure('Visible', 'off', 'Position', [100, 100, 1000, 800]);
+                % add figure title
+                sgtitle(sprintf('Anisotropy and Orientation distribution (fs = %d, N = %d, t = %s)', fs, N, timestamp_text), 'FontSize', 16);
+                t = tiledlayout(f, 3, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+                % --- Anisotropy histogram ---
+                ax1 = nexttile(t, 1); 
+                % Row 1, Col 1
                 if isfield(void_data, 'anisotropy')
-                    histogram(void_data.anisotropy, 20, 'FaceColor', [0.2 0.6 0.8]);
-                    xlabel('Anisotropy');
-                    ylabel('Count');
-                    title(sprintf('Anisotropy Distribution (Frame %d)', i));
-                    xlim([0 1]);
+                    % Compute histogram data
+                    [counts, edges] = histcounts(void_data.anisotropy, 20, 'Normalization', 'pdf');
+                    bin_centers = (edges(1:end-1) + edges(2:end)) / 2;
+                    plot(ax1, bin_centers, counts, 'Color', [0.2 0.6 0.8], 'LineWidth', 2);
+                    xlabel(ax1, 'Anisotropy');
+                    ylabel(ax1, 'PDF');
+                    title(ax1, 'Anisotropy Distribution');
+                    xlim(ax1, [0 1]);
+                    exportgraphics(ax1, sprintf('%s//anisotropy_hist_%d.png', void_anisotropy_hist_save_dir, i));
                 end
-                
-                % --- Angle distribution (polar plot) ---
-                subplot(1,2,2);
-                if isfield(void_data, 'theta') && isfield(void_data, 'radius')
-                    theta = [void_data.theta, void_data.theta+pi];
-                    radius = [void_data.radius, void_data.radius];
-                    polarplot(theta, radius, 'r-', 'LineWidth', 2);
-                    title('Angle Distribution');
+
+                % --- Void area fraction ---
+                ax2 = nexttile(t, 9); % Row 3, Col 1
+                end_index = find(data.image_indexes == i, 1, 'last');
+                plot(ax2, normalized_x(1:end_index), data.void_area_frac(1:end_index), 'Color', [0.2 0.6 0.8], 'LineWidth', 2);
+                ax2.XLim = [0 100];
+                title(ax2, 'Void Area Fraction Evolution');
+                ax2.XLabel.String = 'Percent Completion (%)';
+                ax2.YLabel.String = 'Void Area Fraction';
+
+                % --- Chains area fraction (big subplot, col 2) ---
+                ax3 = nexttile(t, 5); % Span 3 rows, col 2
+                end_index = find(data.image_indexes <= i, 1, 'last');
+                chain_area = sum(bw_image(:) == 0);%1-white,0-black
+                chain_area_frac(end_index) = chain_area / total_area; % Calculate area fraction
+                plot(ax3, normalized_x(1:end_index), chain_area_frac(1:end_index), 'Color', [0.2 0.6 0.8], 'LineWidth', 2);
+                ax3.XLim = [0 100];
+                title(ax3, 'Chains Area Fraction Evolution');
+                ax3.XLabel.String = 'Percent Completion (%)';
+                ax3.YLabel.String = 'Chains Area Fraction';
+
+                % --- orientation distribution (polar hist) ---
+                nexttile(t, 2, [2 1]);
+                eigenVectors = void_data.eigenVectors;
+                if ~isempty(eigenVectors)
+                    num_vec = length(eigenVectors);
+                    majorEigenVectors = zeros(num_vec, 2);
+                    for ii = 1:num_vec
+                        majorEigenVectors(ii, :) = eigenVectors{ii}(:,1)';
+                    end
+                    cv = majorEigenVectors;
+                    cv1 = cv;
+                    cv2 = -cv;
+                    cv3 = [cv1; cv2];
+                    theta = atan2(cv3(:,2), cv3(:,1));
+                    theta(theta < 0) = theta(theta < 0) + 2*pi;
+                    polarhistogram(theta, 18);
+                    title('Orientation Distribution');
+                    pax = gca; % Get the polar axes
+                    pax.ThetaZeroLocation = 'right';
+                    pax.ThetaDir = 'counterclockwise';
+                    pax.RAxis.Label.String = 'Frequency';
+                    exportgraphics(pax, sprintf('%s//void_orientation_%d.png', void_orientation_save_dir, i));
+                end
+                % --- Scalar Anisotropy plot ---
+                ax5 = nexttile(t, 10, [1 1]);
+                if isfield(void_data, 'anisotropy')
+                    anisotropy_norm_frame = [anisotropy_norm_frame; (i-obj.app.stack_info.start_index)/(obj.app.stack_info.end_index-obj.app.stack_info.start_index)];
+                    anisotropy_norm = [anisotropy_norm; void_data.norm_dev];
+                    plot(anisotropy_norm_frame * 100, anisotropy_norm, 'Color', [0.2 0.6 0.8], 'LineWidth', 2);
+                    xlabel('Percent Completion (%)');
+                    ylabel('Anisotropy Norm');
+                    title('Anisotropy Norm Evolution');
+                    xlim([1 100]);
+                else
+                    text(0.5, 0.5, 'No Anisotropy Data', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle');
+                end
+                % --- Voids boundaries with eigen vectors (big subplot, last 2 cols) ---
+                ax6 = nexttile(t, 3, [3 2]); % Start at row 1, col 3, span 3 rows and 2 columns
+                axes(ax6); hold on;
+                voids_save_dir = sprintf("%s//voids_images_%s//", parentDir, iteration);
+                if ~exist(voids_save_dir, 'dir')
+                    mkdir(voids_save_dir);
+                end 
+                img_filename = sprintf('%s//voids_%d.png', voids_save_dir, i);
+                if exist(img_filename, 'file')
+                    imshow(img_filename, 'Parent', ax6);
+                else
+                    imshow(bw_image);
+                    B = void_data.B;
+                    colors = ['b' 'g' 'r' 'c' 'm' 'y'];
+                    B_len = length(B);
+                    centroids = zeros(B_len,2);
+                    V1 = zeros(B_len,2);
+                    V2 = zeros(B_len,2);
+
+                    % Parallel computation of centroids and eigenvectors
+                    parfor k = 1:B_len
+                        boundary = B{k};
+                        x = boundary(:,2);
+                        y = boundary(:,1);
+                        x_mean = mean(x);
+                        y_mean = mean(y);
+                        coords = [x - x_mean, y - y_mean];
+                        C = cov(coords);
+                        [V, D] = eig(C);
+                        [~, idx_sort] = sort(diag(D), 'descend');
+                        V = V(:, idx_sort);
+                        centroids(k,:) = [x_mean, y_mean];
+                        V1(k,:) = V(:,1)';
+                        V2(k,:) = V(:,2)';
+                    end
+
+                    hold on
+                    for k = 1:B_len
+                        boundary = B{k};
+                        cidx = mod(k-1, length(colors)) + 1;
+                        plot(boundary(:,2), boundary(:,1), colors(cidx), 'LineWidth', 2, 'HandleVisibility', 'off');
+                        scale = 10;
+                        x_mean = centroids(k,1);
+                        y_mean = centroids(k,2);
+                        v1 = V1(k,:) * scale;
+                        v2 = V2(k,:) * scale;
+                        quiver(x_mean, y_mean, v1(1), v1(2), 0, 'r', 'LineWidth', 1, 'MaxHeadSize', 1, 'HandleVisibility', 'off');
+                        quiver(x_mean, y_mean, -v1(1), -v1(2), 0, 'r', 'LineWidth', 1, 'MaxHeadSize', 1, 'HandleVisibility', 'off');
+                        quiver(x_mean, y_mean, v2(1), v2(2), 0, 'b', 'LineWidth', 1, 'MaxHeadSize', 1, 'HandleVisibility', 'off');
+                        quiver(x_mean, y_mean, -v2(1), -v2(2), 0, 'b', 'LineWidth', 1, 'MaxHeadSize', 1, 'HandleVisibility', 'off');
+                        plot(x_mean, y_mean, 'ro', 'MarkerSize', 0.5, 'LineWidth', 0.2, 'HandleVisibility', 'off');
+                    end
+                    hold off
+                    axis(ax6, 'image');
+                    exportgraphics(ax6, sprintf('%s//voids_%d.png', voids_save_dir, i));
+                end
+                % save all the axes
+                if(i==last_valid_index)
+                    % Save the anisotropy histogram as an image
+                    results_dir = fullfile(parentDir, sprintf('voids_results_%s', iteration));
+                    if ~exist(results_dir, 'dir')
+                        mkdir(results_dir);
+                    end
+                    % exportgraphics(ax1, fullfile(results_dir, sprintf('anisotropy_histogram_%d.png', i)));
+
+                    exportgraphics(ax2, fullfile(results_dir, sprintf('void_area_fraction_%d.png', i)));
+
+                    exportgraphics(ax3, fullfile(results_dir, sprintf('chain_area_fraction_%d.png', i)));
+
+                    exportgraphics(ax5, fullfile(results_dir, sprintf('scalar_anisotropy_%d.png', i)));
                 end
 
                 % Save the figure
+                annotation(f, 'textbox', [0 0.95 1 0.05], 'String', ...
+                    sprintf('fs = %d, N = %d, t = %s', fs, N, timestamp_text), ...
+                    'EdgeColor', 'none', 'HorizontalAlignment', 'center', 'FontSize', 16, 'FontWeight', 'bold');
                 filename = fullfile(save_dir, sprintf('anisotropy_angle_%04d.png', i));
-                exportgraphics(f, filename);
+                set(f, 'Units', 'pixels', 'Position', [100, 100, 1200, 1000]);
+                set(f, 'PaperUnits', 'inches');
+                set(f, 'PaperPosition', [0 0 12 10]); % [left bottom width height] in inches
+                set(f, 'PaperSize', [12 10]);         % [width height] in inches
+                set(f, 'PaperPositionMode', 'manual');
+                drawnow; % Ensure layout is updated % Force MATLAB to update layout
+                
+                print(f, filename, '-dpng', '-r100');
                 close(f);
                 progress = i / n_frames;
                 waitbar(progress, h1);
                 % break;
+            end
+            close(h1);
+        end
+        function plot_anisotropy_and_angle_evolution_stacks(obj)
+            h1 = waitbar(0, 'Processing stacks for anisotropy and angle evolution');
+            for i = 33:length(obj.app.stack_paths)%31,32
+                % if i == 72
+                %     continue;
+                % end
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                % [N, fs] = obj.app.utils.get_info(obj.app.path);
+                [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+                if ~isfield(empty, 'empty')
+                    obj.app.trial.set_stack_empty_or_not();
+                    empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+                end
+                
+                if ~empty.empty
+                    fprintf('Skipping as empty %s\n', obj.app.path);
+                    continue;
+                end
+                obj.app.utils.load_stack_info();
+                obj.plot_anisotropy_and_angle_evolution_stack();
+                progress = i / length(obj.app.stack_paths);
+                waitbar(progress, h1);
             end
             close(h1);
         end

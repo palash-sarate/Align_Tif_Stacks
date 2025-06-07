@@ -94,6 +94,9 @@ classdef App < handle
                         % remove directories that have voids_images in them
                         subFolders = subFolders(~contains({subFolders.name}, 'voids_images'));  % Remove directories that contain 'voids_images'
                         subFolders = subFolders(~contains({subFolders.name}, 'anisotropy_angle_frames'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~contains({subFolders.name}, 'void_orientation'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~contains({subFolders.name}, 'voids_results'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~contains({subFolders.name}, 'anisotropy_hist'));  % Remove directories that contain 'voids_images'
                         subFolders = subFolders(~ismember({subFolders.name}, {'.', '..'}));  % Remove '.' and '..' directories
 
                         for k = 1:length(subFolders)

@@ -8,7 +8,15 @@ classdef Utils < handle
         end
         %%%%%%%%%%%%%%%%%%%%%% UTILS %%%%%%%%%%%%%%%%%%%%%%
         % function to return a unique color from jet colormap for each N
-        function color = get_color(~, N)
+        function color = get_color(~, varargin)
+            N = varargin{1};
+            if numel(varargin) > 1
+                ind = varargin{2};
+                total = varargin{3};
+                colormap = jet(total);
+                color = colormap(ind, :);
+                return;
+            end
             switch N
                 case 1
                     color = [0, 0, 0];
@@ -156,6 +164,7 @@ classdef Utils < handle
             obj.app.current_image_idx = image_idx; % Update the current image index
             % Get the current slider value
             set(obj.app.ui.controls.frameNumber, 'String', num2str(k)); % Update the frame number display
+            set(obj.app.ui.controls.imageNumber, 'String', num2str(image_idx)); % Update the frame number display
             set(obj.app.ui.controls.slider, 'Value', k);  % update the slider value
             % load the image if it's not already loaded
             if isempty(obj.app.stack_info.img_data.imgs{image_idx})            

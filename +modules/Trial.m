@@ -225,13 +225,13 @@ classdef Trial < handle
                     fprintf('Skipping %s\n', obj.app.path);           
                     continue;
                 end
+                obj.app.load_images_callback();
                 obj.set_stack_empty_or_not();
                 % WaitMessage.Send;
             end
             % WaitMessage.Destroy;
         end
         function set_stack_empty_or_not(obj)
-            obj.app.load_images_callback();
             obj.app.utils.setFrame(obj.app.stack_info.end_index - obj.app.stack_info.start_index + 1);
             % show dialog box to user to set the emptyornot field
             options = {'Empty', 'Not Empty'};
