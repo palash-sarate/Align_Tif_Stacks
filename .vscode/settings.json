@@ -67,6 +67,7 @@
         "normxcorr",
         "numel",
         "numpy",
+        "omitnan",
         "orntn",
         "parfeval",
         "parfor",

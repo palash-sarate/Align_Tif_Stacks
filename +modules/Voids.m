@@ -1141,7 +1141,7 @@ classdef Voids < handle
         end
         function plot_anisotropy_and_angle_evolution_stacks(obj)
             h1 = waitbar(0, 'Processing stacks for anisotropy and angle evolution');
-            for i = 33:length(obj.app.stack_paths)%31,32
+            for i = 80:length(obj.app.stack_paths)%31,32
                 % if i == 72
                 %     continue;
                 % end
@@ -1236,6 +1236,479 @@ classdef Voids < handle
                 exportgraphics(f, fullfile(save_dir, save_name));
                 close(f);
             end
+        end
+        function convert_image_dirs_to_videos(obj)
+            h1 = waitbar(0, 'Processing stacks for video conversion');
+            % Converts directories of saved images for each stack into videos
+            for i = 1:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                [~, ~] = obj.app.utils.get_info(obj.app.path);
+                [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
+        
+                % List of subdirectories to convert (add/remove as needed)
+                subdirs = { ...
+                    % sprintf('voids_images_%s', iteration), ...
+                    sprintf('anisotropy_hist_%s', iteration), ...
+                    sprintf('void_orientation_%s', iteration), ...
+                    sprintf('anisotropy_angle_frames_%s', iteration) ...
+                };
+        
+                for s = 1:length(subdirs)
+                    img_dir = fullfile(parentDir, subdirs{s});
+                    if ~exist(img_dir, 'dir')
+                        continue;
+                    end
+                    % Find all PNG images in the directory
+                    img_files = dir(fullfile(img_dir, '*.png'));
+                    if isempty(img_files)
+                        continue;
+                    end
+                    % Sort files by name (assumes zero-padded numbering)
+                    [~, idx] = sort({img_files.name});
+                    img_files = img_files(idx);
+        
+                    % Read the first image to get frame size
+                    first_img = imread(fullfile(img_dir, img_files(1).name));
+                    [height, width, ~] = size(first_img);
+        
+                    % Create VideoWriter object
+                    video_filename = fullfile(img_dir, [subdirs{s} '.mp4']);
+                    v = VideoWriter(video_filename, 'MPEG-4');
+                    v.FrameRate = 10; % Adjust as needed
+                    open(v);
+        
+                    % Write each image as a frame
+                    for k = 1:length(img_files)
+                        img = imread(fullfile(img_dir, img_files(k).name));
+                        % Ensure all frames are the same size
+                        if size(img,1) ~= height || size(img,2) ~= width
+                            img = imresize(img, [height, width]);
+                        end
+                        writeVideo(v, img);
+                    end
+                    close(v);
+                    fprintf('Saved video: %s\n', video_filename);
+                end
+                progress = i / length(obj.app.stack_paths);
+                waitbar(progress, h1);
+            end
+            close(h1);
+        end
+        % plot chain and void area fraction vs absolute time, 
+        % superpose all chains together for each frequency.
+        function plot_chain_and_void_area_fraction_vs_time_combined(obj)
+            % TODO: avg trials together for each frequency
+            % Load the pooled voids data from results folder
+            if isempty(obj.voids_data)
+                obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            end
+            % Save the figures
+            save_dir = fullfile('F:', 'shake_table_data', 'Results', 'area_fracs');
+            if ~exist(save_dir, 'dir')
+                mkdir(save_dir);
+            end
+            % pool chain area fractions in to void_data
+            obj.pool_chain_area_fraction_into_voidData();
+            all_data = obj.voids_data.all_data;
+            for ns = fieldnames(all_data)'
+                n = ns{1};
+                if n == "N4"
+                    continue; % skip N4 for now
+                end
+                n_num = str2double(n(2:end)); % Extract stack number
+                for fs = fieldnames(all_data.(n))'
+                    f = fs{1};
+                    f_num = str2double(f(2:end)); % Extract frequency number
+                    for iters = fieldnames(all_data.(n).(f))'
+                        iter = iters{1};
+                        % if iter contains _cont skip it
+                        if contains(iter, '_cont')
+                            continue;
+                        end
+                        iter_num = str2double(iter(5:end)); % Extract iteration number
+                        data = all_data.(n).(f).(iter);
+                        fprintf('Processing frequency %s, stack %s, iteration %s\n', f, n, iter);
+                        % assignin('base', 'temp', data); % For debugging
+                        empty = load(sprintf('F://shake_table_data//N%d//%dhz_hopperflow//60deg//10cm//stack_info_%d.mat',n_num,f_num,iter_num), '-mat', 'empty');
+                        if ~empty.empty                  
+                            fprintf('Skipping %s\n', obj.app.path);           
+                            continue;
+                        end
+
+                        figure(f_num);ax = gca;hold(ax, 'on');
+                        % Plot void area fraction
+                        plot(ax, data.normalized_x, data.void_area_frac,'color',obj.app.utils.get_color(n_num), 'LineWidth', 2, 'DisplayName', sprintf('%s %s %s', f, n, iter));
+
+                        figure(f_num+21);ax2 = gca;hold(ax2, 'on');                     
+                        % % Plot chain area fraction
+                        plot(ax2, data.normalized_x, data.chain_area_frac,'color',obj.app.utils.get_color(n_num), 'LineWidth', 2, 'DisplayName', sprintf('%s %s %s', f, n, iter));
+                    end
+                end                
+            end
+
+            Ns = [12, 24, 48];
+            legend_labels = arrayfun(@(n) sprintf('N = %d', n), Ns, 'UniformOutput', false);
+            for ns = fieldnames(all_data)'
+                n = ns{1};
+                if n == "N4"
+                    continue; % skip N4 for now
+                end
+                for fs = fieldnames(all_data.(n))'
+                    f = fs{1};
+                    f_num = str2double(f(2:end)); % Extract frequency number
+                    figure(f_num);ax = gca;hold(ax, 'on');
+
+                    figure(f_num+21);ax2 = gca;hold(ax2, 'on');                     
+
+                    title(ax, 'Void Area Fraction Evolution');
+                    ax.XLabel.String = 'Percent Completion (%)';
+                    ax.YLabel.String = 'Void Area Fraction';
+                    ax.XLim = [0 100];
+                    % ax.YLim = [0 0.4];
+                    legend_handles = gobjects(1, numel(Ns));
+                    for k = 1:numel(Ns)
+                        legend_handles(k) = plot(ax, NaN, NaN, 'LineWidth', 2, ...
+                            'Color', obj.app.utils.get_color(Ns(k)), 'DisplayName', legend_labels{k});
+                    end
+                    legend(ax, legend_handles, legend_labels, 'Location', 'best');
+
+                    title(ax2, 'Chains Area Fraction Evolution');
+                    ax2.XLabel.String = 'Percent Completion (%)';
+                    ax2.YLabel.String = 'Chains Area Fraction';
+                    ax2.XLim = [0 100];
+                    % ax2.YLim = [0 1];
+                    legend_handles2 = gobjects(1, numel(Ns));
+                    for k = 1:numel(Ns)
+                        legend_handles2(k) = plot(ax2, NaN, NaN, 'LineWidth', 2, ...
+                            'Color', obj.app.utils.get_color(Ns(k)), 'DisplayName', legend_labels{k});
+                    end
+                    legend(ax2, legend_handles2, legend_labels, 'Location', 'best');
+
+                    exportgraphics(ax, fullfile(save_dir, sprintf('void_area_fraction_f%d.png', f_num)));
+                    exportgraphics(ax2, fullfile(save_dir, sprintf('chain_area_fraction_f%d.png', f_num)));
+                end                
+            end          
+        end
+        function plot_chain_and_void_area_fraction_vs_time_averaged(obj)
+            if isempty(obj.voids_data)
+                obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            end
+            save_dir = fullfile('F:', 'shake_table_data', 'Results', 'area_fracs','averaged');
+            if ~exist(save_dir, 'dir')
+                mkdir(save_dir);
+            end
+            obj.pool_chain_area_fraction_into_voidData();
+            all_data = obj.voids_data.all_data;
+            Ns = [12, 24, 48];
+            freq_list = [];
+            % Find all unique frequencies
+            for ns = fieldnames(all_data)'
+                n = ns{1};
+                for fs = fieldnames(all_data.(n))'
+                    f = fs{1};
+                    f_num = str2double(f(2:end));
+                    freq_list = [freq_list, f_num];
+                end
+            end
+            unique_fs = unique(freq_list);
+            disp(sprintf('Unique frequencies found: %s', num2str(unique_fs)));
+
+            % Common x-axis for interpolation
+            xq = 0:1:100;
+
+            for n_idx = 1:numel(Ns)
+                N_val = Ns(n_idx);
+                n_field = sprintf('N%d', N_val);
+                if ~isfield(all_data, n_field)
+                    fprintf('No data for N = %d\n', N_val);
+                    continue;
+                end
+                for f_idx = 1:numel(unique_fs)
+                    f_val = unique_fs(f_idx);
+                    f_field = sprintf('f%d', f_val);
+                    if ~isfield(all_data.(n_field), f_field)
+                        fprintf('No data for frequency %d in N = %d\n', f_val, N_val);
+                        continue;
+                    end
+                    % Gather all iterations for this (N, f)
+                    iters = fieldnames(all_data.(n_field).(f_field));
+                    void_mat = [];
+                    chain_mat = [];
+                    for it = 1:numel(iters)
+                        iter = iters{it};
+                        data = all_data.(n_field).(f_field).(iter);
+                        col_names = data.Properties.VariableNames;
+                        % Interpolate to common xq
+                        if ismember('normalized_x', col_names) && ismember('void_area_frac', col_names) && ismember('chain_area_frac', col_names)
+                            y_void = interp1(data.normalized_x, data.void_area_frac, xq, 'linear', 'extrap');
+                            y_chain = interp1(data.normalized_x, data.chain_area_frac, xq, 'linear', 'extrap');
+                            void_mat = [void_mat; y_void];
+                            chain_mat = [chain_mat; y_chain];
+                        end
+                    end
+                    if isempty(void_mat)
+                        fprintf('No valid data for N = %d, f = %d\n', N_val, f_val);
+                        continue;
+                    end
+                    % Compute mean and std
+                    void_mean = mean(void_mat, 1, 'omitnan');
+                    void_std = std(void_mat, 0, 1, 'omitnan');
+                    chain_mean = mean(chain_mat, 1, 'omitnan');
+                    chain_std = std(chain_mat, 0, 1, 'omitnan');
+
+                    % Plot
+                    figure(100+f_val);
+                    ax = gca; hold(ax, 'on');
+                    fill([xq fliplr(xq)], [void_mean+void_std fliplr(void_mean-void_std)], ...
+                        obj.app.utils.get_color(N_val), 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+                    plot(xq, void_mean, 'LineWidth', 2, 'Color', obj.app.utils.get_color(N_val), ...
+                        'DisplayName', sprintf('N = %d', N_val));
+                    xlabel('Percent Completion (%)');
+                    ylabel('Void Area Fraction');
+                    title(sprintf('Void Area Fraction (Averaged) for f = %d', f_val));
+                    legend('show');
+                    hold(ax, 'off');
+                    exportgraphics(ax, fullfile(save_dir, sprintf('void_area_fraction_avg_N%d_f%d.png', N_val, f_val)));
+
+                    figure(200+f_val);
+                    ax2 = gca; hold(ax2, 'on');
+                    fill([xq fliplr(xq)], [chain_mean+chain_std fliplr(chain_mean-chain_std)], ...
+                        obj.app.utils.get_color(N_val), 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+                    plot(xq, chain_mean, 'LineWidth', 2, 'Color', obj.app.utils.get_color(N_val), ...
+                        'DisplayName', sprintf('N = %d', N_val));
+                    xlabel('Percent Completion (%)');
+                    ylabel('Chain Area Fraction');
+                    title(sprintf('Chain Area Fraction (Averaged) for f = %d', f_val));
+                    legend('show');
+                    hold(ax2, 'off');
+                    exportgraphics(ax2, fullfile(save_dir, sprintf('chain_area_fraction_avg_N%d_f%d.png', N_val, f_val)));
+                end
+            end
+        end
+        function plot_anisotropy_norm_vs_time_combined(obj)
+            % Load the pooled voids data from results folder
+            if isempty(obj.voids_data)
+                obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            end
+            
+            f = figure();
+            % ax = gca; 
+            hold on;
+            voids_save_dir = sprintf("%s//voids_images_%s//", parentDir, iteration);
+            if ~exist(voids_save_dir, 'dir')
+                mkdir(voids_save_dir);
+            end 
+            plot(anisotropy_norm_frame * 100, anisotropy_norm, 'Color', [0.2 0.6 0.8], 'LineWidth', 2);
+            xlabel('Percent Completion (%)');
+            ylabel('Anisotropy Norm');
+            title('Anisotropy Norm Evolution');
+            xlim([1 100]);                
+
+            % Ensure save directory exists
+            save_dir = fullfile(parentDir,sprintf("anisotropy_angle_frames_%s",iteration));
+            if ~exist(save_dir, 'dir')
+                mkdir(save_dir);
+            end
+            print(f, filename, '-dpng', '-r100');
+            close(f);
+            close(h1);
+        end
+        function plot_anisotropy_norm_vs_time_averaged(obj)
+            if isempty(obj.voids_data)
+                obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            end
+            save_dir = fullfile('F:', 'shake_table_data', 'Results', 'anisotropy_norm_averaged');
+            if ~exist(save_dir, 'dir')
+                mkdir(save_dir);
+            end
+            all_data = obj.voids_data.all_data;
+            Ns = [12, 24, 48];
+            freq_list = [];
+            % Find all unique frequencies
+            for ns = fieldnames(all_data)'
+                n = ns{1};
+                for fs = fieldnames(all_data.(n))'
+                    f = fs{1};
+                    f_num = str2double(f(2:end));
+                    freq_list = [freq_list, f_num];
+                end
+            end
+            unique_fs = unique(freq_list);
+
+            % Common x-axis for interpolation
+            xq = 0:1:100;
+
+            for n_idx = 1:numel(Ns)
+                N_val = Ns(n_idx);
+                n_field = sprintf('N%d', N_val);
+                if ~isfield(all_data, n_field)
+                    fprintf('No data for N = %d\n', N_val);
+                    continue;
+                end
+                for f_idx = 1:numel(unique_fs)
+                    f_val = unique_fs(f_idx);
+                    f_field = sprintf('f%d', f_val);
+                    if ~isfield(all_data.(n_field), f_field)
+                        fprintf('No data for frequency %d in N = %d\n', f_val, N_val);
+                        continue;
+                    end
+                    % Gather all iterations for this (N, f)
+                    iters = fieldnames(all_data.(n_field).(f_field));
+                    norm_mat = [];
+                    for it = 1:numel(iters)
+                        iter = iters{it};
+                        data = all_data.(n_field).(f_field).(iter);
+                        % Check for required fields
+                        if isfield(data, 'normalized_x') && isfield(data, 'norm_dev')
+                            y_norm = interp1(data.normalized_x, data.norm_dev, xq, 'linear', 'extrap');
+                            norm_mat = [norm_mat; y_norm];
+                        end
+                    end
+                    if isempty(norm_mat)
+                        fprintf('No valid anisotropy norm data for N = %d, f = %d\n', N_val, f_val);
+                        continue;
+                    end
+                    % Compute mean and std
+                    norm_mean = mean(norm_mat, 1, 'omitnan');
+                    norm_std = std(norm_mat, 0, 1, 'omitnan');
+
+                    % Plot
+                    figure(300+f_val);
+                    ax = gca; hold(ax, 'on');
+                    fill([xq fliplr(xq)], [norm_mean+norm_std fliplr(norm_mean-norm_std)], ...
+                        obj.app.utils.get_color(N_val), 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+                    plot(xq, norm_mean, 'LineWidth', 2, 'Color', obj.app.utils.get_color(N_val), ...
+                        'DisplayName', sprintf('N = %d', N_val));
+                    xlabel('Percent Completion (%)');
+                    ylabel('Anisotropy Norm');
+                    title(sprintf('Anisotropy Norm (Averaged) for f = %d', f_val));
+                    legend('show');
+                    hold(ax, 'off');
+                    exportgraphics(ax, fullfile(save_dir, sprintf('anisotropy_norm_avg_N%d_f%d.png', N_val, f_val)));
+                end
+            end
+        end
+        function pool_chain_area_fraction_into_voidData(obj)
+            % loop over all the stacks
+            h1 = waitbar(0, 'Processing stacks for chain area fraction');
+            for i = 30:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                [N, fs] = obj.app.utils.get_info(obj.app.path);
+                [iteration, ~] = obj.app.utils.getIteration(obj.app.path);
+
+                tbl = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration));
+                if ismember('chain_area_frac', tbl.Properties.VariableNames)
+                    continue; % chain_area_frac already exists
+                else
+                    obj.app.utils.load_stack_info();
+                    voids = obj.app.stack_info.voids;                
+                    total_area = sum(sum(~obj.app.stack_info.mask));
+                    data = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration));
+                    normalized_x = ((data.image_indexes-min(data.image_indexes)) / max(data.image_indexes)) * 100;
+                
+                    % chain_area_frac is not empty
+                    if ~isfield(obj.app.stack_info, 'chain_area_frac')
+                        n_frames = length(obj.app.stack_info.voids);
+                        fprintf('Processing %d frames for anisotropy_and_angle_evolution\n', n_frames);
+                        chain_area_frac = zeros(1, numel(data.image_indexes));
+                        h2 = waitbar(0, 'Processing stack for anisotropy and angle evolution');
+                        for ii = 1:n_frames
+                            void_data = voids{ii};
+                            if isempty(void_data) || ~isfield(void_data, 'anisotropy') || ~isfield(void_data, 'theta') || ~isfield(void_data, 'radius')
+                                continue;
+                            end
+
+                            particle_locations = obj.app.particle_locator.get_particle_locations(ii);
+                            radius = 5;
+                            num_particles = numel(particle_locations.x);
+                            circle_area = pi * radius^2;
+                            chain_area = num_particles * circle_area;
+                            chain_area_frac(end_index) = chain_area / total_area; % Calculate area fraction
+                            
+                            progress = ii / n_frames;
+                            waitbar(progress, h2);
+                        end
+                        % add the chain area fraction to the data structure
+                        obj.app.stack_info.chain_area_frac = chain_area_frac;
+                        % save the stack info
+                        obj.app.utils.save_stack_callback();
+                        close(h2);
+                    else
+                        chain_area_frac = obj.app.stack_info.chain_area_frac;
+                    end 
+                    % --- Void area fraction ---
+                    % obj.voids_data.(sprintf('f%d', fs)).(sprintf('N%d', N)).(sprintf('iter%s', iteration)).void_area_frac = data.void_area_frac;
+                    obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration)).normalized_x = normalized_x;
+
+                    % --- Chains area fraction ---
+                    obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration)).chain_area_frac = chain_area_frac';
+                    % obj.voids_data.(sprintf('f%d', fs)).(sprintf('N%d', N)).(sprintf('iter%s', iteration)).image_indexes = data.image_indexes;
+                end
+                progress = i / numel(obj.app.stack_paths);
+                waitbar(progress, h1);
+            end
+            close(h1);
+            % save the plot data
+            all_data = obj.voids_data.all_data;
+            save('F:\shake_table_data\Results\voids_data.mat', 'all_data');
+        end
+        function pool_anisotropy_norm_into_voidData(obj)
+            % loop over all the stacks
+            h1 = waitbar(0, 'Processing stacks for anisotropy norm vs time');
+            for j = 1:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', j);
+                obj.app.path = obj.app.stack_paths{j};
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+
+                [N, fs] = obj.app.utils.get_info(obj.app.path);
+                iteration = obj.app.stack_info.iteration;
+                parentDir = obj.app.stack_info.parentDir;
+
+                n_frames = length(obj.app.stack_info.voids);
+                voids = obj.app.stack_info.voids;
+                fprintf('Processing %d frames for anisotropy_and_angle_evolution\n', n_frames);
+
+                anisotropy_norm = [];
+                % anisotropy_norm_frame = [];
+                % start_frame_timestamp = obj.app.timer.time_2_sec(obj.app.stack_info.timestamps{obj.app.stack_info.start_index});
+                            
+                h1 = waitbar(0, 'Processing stack for anisotropy and angle evolution');
+                for i = 1:n_frames
+                    void_data = voids{i};
+                    if isempty(void_data) || ~isfield(void_data, 'anisotropy') || ~isfield(void_data, 'theta') || ~isfield(void_data, 'radius')
+                        continue;
+                    end
+                    % fprintf('Processing frame %d/%d\n', i, n_frames);
+                    void_data = obj.clean_void_data(void_data, 800, 800);
+                    % timeStamp = obj.app.stack_info.timestamps{i};
+                    % secs = obj.app.timer.time_2_sec(timeStamp);
+                    % timestamp_text = sprintf("%.0f Sec", secs-start_frame_timestamp);
+                    % --- Scalar Anisotropy plot ---
+                    if isfield(void_data, 'anisotropy')
+                        % anisotropy_norm_frame = [anisotropy_norm_frame; i];
+                        anisotropy_norm = [anisotropy_norm; void_data.norm_dev];
+                    else
+                        text(0.5, 0.5, 'No Anisotropy Data', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle');
+                    end
+                    progress = i / n_frames;
+                    waitbar(progress, h1);                    
+                end
+                % obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration)).anisotropy_norm_frame = anisotropy_norm_frame;
+                obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration)).anisotropy_norm = anisotropy_norm;
+            end
+            close(h1);
+            % save the plot data
+            all_data = obj.voids_data.all_data;
+            save('F:\shake_table_data\Results\voids_data.mat', 'all_data');
         end
     end
 end
