@@ -1467,7 +1467,7 @@ classdef Voids < handle
                         'DisplayName', sprintf('N = %d', N_val));
                     % add errorbars with handlevisibility off linestyle 'none' and marker 'none'
                     errorbar(xq(indxs), void_mean(indxs), void_std(indxs), 'LineStyle', 'none', 'Marker', 'none', ...
-                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off');
+                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off', 'LineWidth', 2);
                     xlabel('Percent Completion (%)');
                     ylabel('Void Area Fraction');
                     title(sprintf('Void Area Fraction (Averaged) for f = %d', f_val));
@@ -1612,8 +1612,9 @@ classdef Voids < handle
                     for it = 1:numel(iters)
                         iter = iters{it};
                         data = all_data.(n_field).(f_field).(iter);
+                        col_names = data.Properties.VariableNames;
                         % Check for required fields
-                        if isfield(data, 'normalized_x') && isfield(data, 'anisotropy_norm')
+                        if ismember('normalized_x', col_names) && ismember('anisotropy_norm', col_names)
                             y_norm = interp1(data.normalized_x, data.anisotropy_norm, xq, 'linear', 'extrap');
                             norm_mat = [norm_mat; y_norm];
                         end
@@ -1636,7 +1637,7 @@ classdef Voids < handle
                         'DisplayName', sprintf('N = %d', N_val));
                     % add errorbars with handlevisibility off linestyle 'none' and marker 'none'
                     errorbar(xq(indxs), norm_mean(indxs), norm_std(indxs), 'LineStyle', 'none', 'Marker', 'none', ...
-                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off');
+                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off','Line');
                     xlabel('Percent Completion (%)');
                     ylabel('Anisotropy Norm');
                     title(sprintf('Anisotropy Norm (Averaged) for f = %d', f_val));
