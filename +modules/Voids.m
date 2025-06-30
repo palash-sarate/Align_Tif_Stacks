@@ -1637,13 +1637,13 @@ classdef Voids < handle
                         'DisplayName', sprintf('N = %d', N_val));
                     % add errorbars with handlevisibility off linestyle 'none' and marker 'none'
                     errorbar(xq(indxs), norm_mean(indxs), norm_std(indxs), 'LineStyle', 'none', 'Marker', 'none', ...
-                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off','Line');
+                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off','LineWidth', 2);
                     xlabel('Percent Completion (%)');
                     ylabel('Anisotropy Norm');
                     title(sprintf('Anisotropy Norm (Averaged) for f = %d', f_val));
                     legend('show');
                     hold(ax, 'off');
-                    exportgraphics(ax, fullfile(save_dir, sprintf('anisotropy_norm_avg_N%d_f%d.png', N_val, f_val)));
+                    exportgraphics(ax, fullfile(save_dir, sprintf('anisotropy_norm_f%d.png', f_val)));
                 end
             end
         end
@@ -1758,6 +1758,61 @@ classdef Voids < handle
                         waitbar(progress, h1);                    
                     end
                     obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration)).anisotropy_norm = anisotropy_norm;
+                end
+            end
+            close(h1);
+            % save the plot data
+            all_data = obj.voids_data.all_data;
+            save('F:\shake_table_data\Results\voids_data.mat', 'all_data');
+        end
+
+        % plot a single polar plot with all the orientations of voids over time
+        function plot_total_void_orentation()
+            obj.pool_void_orientation_into_voidData();
+            % Load the pooled voids data from results folder
+        end
+        function pool_void_orientation_into_voidData(obj)
+            % loop over all the stacks
+            h1 = waitbar(0, 'Processing stacks for void orientation');
+            for i = 30:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+
+                [N, fs] = obj.app.utils.get_info(obj.app.path);
+                [iteration, ~] = obj.app.utils.getIteration(obj.app.path);
+
+                tbl = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration));
+                if ismember('void_orientation', tbl.Properties.VariableNames)
+                    continue; % void_orientation already exists
+                else
+                    obj.app.utils.load_stack_info();
+                    n_frames = length(obj.app.stack_info.voids);
+                    voids = obj.app.stack_info.voids;
+                    fprintf('Processing %d frames for void orientation evolution\n', n_frames);
+
+                    void_orientation = [];
+                                
+                    h1 = waitbar(0, 'Processing stack for void orientation evolution');
+                    for ii = 1:n_frames
+                        void_data = voids{ii};
+                        if isempty(void_data) || ~isfield(void_data, 'anisotropy') || ~isfield(void_data, 'theta') || ~isfield(void_data, 'radius')
+                            continue;
+                        end
+                        void_data = obj.clean_void_data(void_data, 800, 800);
+                        % --- Void Orientation plot ---
+                        if isfield(void_data, 'theta')
+                            void_orientation = [void_orientation; void_data.theta];
+                        else
+                            text(0.5, 0.5, 'No Void Orientation Data', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle');
+                        end
+                        progress = ii / n_frames;
+                        waitbar(progress, h1);                    
+                    end
+                    obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration)).void_orientation = void_orientation;
                 end
             end
             close(h1);
