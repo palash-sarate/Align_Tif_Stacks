@@ -1767,9 +1767,81 @@ classdef Voids < handle
         end
 
         % plot a single polar plot with all the orientations of voids over time
-        function plot_total_void_orentation()
+        function plot_total_void_orientation(obj)
+            if isempty(obj.voids_data)
+                obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            end
+            save_dir = fullfile('F:', 'shake_table_data', 'Results', 'orientation');
+            if ~exist(save_dir, 'dir')
+                mkdir(save_dir);
+            end
             obj.pool_void_orientation_into_voidData();
             % Load the pooled voids data from results folder
+            all_data = obj.voids_data.all_data;
+            for ns = fieldnames(all_data)'
+                n = ns{1};
+                if n == "N4"
+                    continue; % skip N4 for now
+                end
+                n_num = str2double(n(2:end)); % Extract stack number
+                for fs = fieldnames(all_data.(n))'
+                    f = fs{1};
+                    f_num = str2double(f(2:end)); % Extract frequency number
+                    for iters = fieldnames(all_data.(n).(f))'
+                        iter = iters{1};
+                        % if iter contains _cont skip it                    
+                        if contains(iter, '_cont') || ~contains(iter, '_orientation')
+                            continue;
+                        end
+                        iter_num = str2double(iter(5)); % Extract iteration number
+                        theta = all_data.(n).(f).(iter);
+                        fprintf('Processing frequency %s, stack %s, iteration %s\n', f, n, iter);
+                        % assignin('base', 'temp', data); % For debugging
+                        empty = load(sprintf('F://shake_table_data//N%d//%dhz_hopperflow//60deg//10cm//stack_info_%d.mat',n_num,f_num,iter_num), '-mat', 'empty');
+                        if ~empty.empty                  
+                            fprintf('Skipping %s\n', obj.app.path);           
+                            continue;
+                        end
+
+                        fig = figure(f_num);pax = polaraxes(fig);hold(pax, 'on');
+                        % theta: your angle data in radians
+                        nbins = 18;
+                        [counts, edges] = histcounts(theta, nbins, 'BinLimits', [0 2*pi]);
+                        bin_centers = (edges(1:end-1) + edges(2:end)) / 2;
+
+                        % Close the curve for polarplot
+                        bin_centers = [bin_centers, bin_centers(1)];
+                        counts = [counts, counts(1)];
+
+                        % Plot as outline
+                        polarplot(pax, bin_centers, counts, 'LineWidth', 2, 'Color', obj.app.utils.get_color(n_num), ...
+                            'DisplayName', sprintf('%s %s %s', f, n, iter));
+                    end
+                end                
+            end
+
+            Ns = [12, 24, 48];
+            legend_labels = arrayfun(@(n) sprintf('N = %d', n), Ns, 'UniformOutput', false);
+            for ns = fieldnames(all_data)'
+                n = ns{1};
+                if n == "N4"
+                    continue; % skip N4 for now
+                end
+                for fs = fieldnames(all_data.(n))'
+                    f = fs{1};
+                    f_num = str2double(f(2:end)); % Extract frequency number
+                    figure(f_num);ax = gca;hold(ax, 'on');
+                    title(ax, 'Scaler anisotropy Evolution');
+                    legend_handles = gobjects(1, numel(Ns));
+                    for k = 1:numel(Ns)
+                        legend_handles(k) = plot(ax, NaN, NaN, 'LineWidth', 2, ...
+                            'Color', obj.app.utils.get_color(Ns(k)), 'DisplayName', legend_labels{k});
+                    end
+                    legend(ax, legend_handles, legend_labels, 'Location', 'best');
+
+                    exportgraphics(ax, fullfile(save_dir, sprintf('anisotropy_f%d.png', f_num)));
+                end                
+            end
         end
         function pool_void_orientation_into_voidData(obj)
             % loop over all the stacks
@@ -1785,35 +1857,49 @@ classdef Voids < handle
                 [N, fs] = obj.app.utils.get_info(obj.app.path);
                 [iteration, ~] = obj.app.utils.getIteration(obj.app.path);
 
-                tbl = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration));
-                if ismember('void_orientation', tbl.Properties.VariableNames)
+                tbl = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs));
+                if isfield(tbl, sprintf('iter%s_orientation', iteration)) && ~obj.app.forced
                     continue; % void_orientation already exists
                 else
                     obj.app.utils.load_stack_info();
                     n_frames = length(obj.app.stack_info.voids);
                     voids = obj.app.stack_info.voids;
                     fprintf('Processing %d frames for void orientation evolution\n', n_frames);
-
                     void_orientation = [];
-                                
-                    h1 = waitbar(0, 'Processing stack for void orientation evolution');
+
+                    h2 = waitbar(0, 'Processing stack for void orientation evolution');
                     for ii = 1:n_frames
                         void_data = voids{ii};
                         if isempty(void_data) || ~isfield(void_data, 'anisotropy') || ~isfield(void_data, 'theta') || ~isfield(void_data, 'radius')
                             continue;
                         end
                         void_data = obj.clean_void_data(void_data, 800, 800);
-                        % --- Void Orientation plot ---
-                        if isfield(void_data, 'theta')
-                            void_orientation = [void_orientation; void_data.theta];
-                        else
-                            text(0.5, 0.5, 'No Void Orientation Data', 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle');
+                        % 
+                        eigenVectors = void_data.eigenVectors;
+                        if ~isempty(eigenVectors)
+                            num_vec = length(eigenVectors);
+                            majorEigenVectors = zeros(num_vec, 2);
+                            for iii = 1:num_vec
+                                majorEigenVectors(iii, :) = eigenVectors{iii}(:,1)';
+                            end
+                            cv = majorEigenVectors;
+                            cv1 = cv;
+                            cv2 = -cv;
+                            cv3 = [cv1; cv2]; % appending vertically
+                            theta = atan2(cv3(:,2), cv3(:,1));
+                            theta(theta < 0) = theta(theta < 0) + 2*pi;
                         end
+
+                        void_orientation = [void_orientation; theta];
+
                         progress = ii / n_frames;
-                        waitbar(progress, h1);                    
+                        waitbar(progress, h2);                    
                     end
-                    obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration)).void_orientation = void_orientation;
+                    close(h2);
+                    obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s_orientation', iteration)) = void_orientation;
                 end
+                progress = i / length(obj.app.stack_paths);
+                waitbar(progress, h1); 
             end
             close(h1);
             % save the plot data

@@ -321,6 +321,9 @@ classdef Ui < handle
             uimenu(anisotropyMenu, 'Text', 'Plot anisotropy norm over time-avg.', ...
                 'MenuSelectedFcn', @(src,evt) obj.app.voids.plot_anisotropy_norm_vs_time_averaged()); 
                                     
+            void_orientation_menu = uimenu(voidsMenu, 'Text', 'Analyze orientation');
+            uimenu(void_orientation_menu, 'Text', 'Plot overall orientation', ...
+                'MenuSelectedFcn', @(src,evt) obj.app.voids.plot_total_void_orientation());
             % Other/General menu
             generalMenu = uimenu(obj.fig, 'Text', 'General');
             uimenu(generalMenu, 'Text', 'Save all stacks', ...
