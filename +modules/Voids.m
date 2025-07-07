@@ -43,7 +43,7 @@ classdef Voids < handle
             end            
             % clear the voids field in the stack_info
             obj.app.stack_info.voids = cell(length(obj.app.stack_info.img_data.img_files), 1);
-            h2 = waitbar(0, 'Processing stack');
+            h2 = waitbar(0, 'Processing stack for voids detection');
             % select equal spaced 100 frames to process from stack
             images_to_process = round(linspace(obj.app.stack_info.start_index, obj.app.stack_info.end_index, 100));
             % loop over all the frames to process
@@ -136,7 +136,7 @@ classdef Voids < handle
             end
             B(edge_boundaries) = [];
         end
-        function bw_img = get_locations_image(~, particle_locations)    
+        function bw_img = get_locations_image(obj, particle_locations)    
             % Define the size of the binary image (adjust as needed)
             img_height = 800; % Replace with the actual height of your image
             img_width = 800;  % Replace with the actual width of your image
@@ -156,6 +156,8 @@ classdef Voids < handle
                 circleMask = (X - centerX).^2 + (Y - centerY).^2 <= radius^2;
                 bw_img(circleMask) = 0; % Set circle pixels to 0 (black)
             end
+            % set masked pixels to 0
+            bw_img(obj.app.stack_info.mask == 1) = 0;
             bw_img = double(bw_img);
         end
         % area fraction of voids over time
@@ -1638,6 +1640,8 @@ classdef Voids < handle
                     % add errorbars with handlevisibility off linestyle 'none' and marker 'none'
                     errorbar(xq(indxs), norm_mean(indxs), norm_std(indxs), 'LineStyle', 'none', 'Marker', 'none', ...
                         'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off','LineWidth', 2);
+                    ax.Box = 'on';
+                    ax.XLim = [0 100];
                     xlabel('Percent Completion (%)');
                     ylabel('Anisotropy Norm');
                     title(sprintf('Anisotropy Norm (Averaged) for f = %d', f_val));
@@ -1661,7 +1665,7 @@ classdef Voids < handle
                 [iteration, ~] = obj.app.utils.getIteration(obj.app.path);
 
                 tbl = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration));
-                if ismember('chain_area_frac', tbl.Properties.VariableNames)
+                if ismember('chain_area_frac', tbl.Properties.VariableNames) && ~obj.app.forced
                     continue; % chain_area_frac already exists
                 else
                     obj.app.utils.load_stack_info();
@@ -1672,7 +1676,7 @@ classdef Voids < handle
                 
                     % chain_area_frac is not empty
                     if ~isfield(obj.app.stack_info, 'chain_area_frac')
-                        n_frames = length(obj.app.stack_info.voids);
+                        n_frames = length(voids);
                         fprintf('Processing %d frames for anisotropy_and_angle_evolution\n', n_frames);
                         chain_area_frac = zeros(1, numel(data.image_indexes));
                         h2 = waitbar(0, 'Processing stack for anisotropy and angle evolution');
@@ -1683,10 +1687,14 @@ classdef Voids < handle
                             end
 
                             particle_locations = obj.app.particle_locator.get_particle_locations(ii);
-                            radius = 5;
-                            num_particles = numel(particle_locations.x);
-                            circle_area = pi * radius^2;
-                            chain_area = num_particles * circle_area;
+                            % METHOD 1: Calculate area fraction based on particle locations
+                            % radius = 5;
+                            % num_particles = numel(particle_locations.x);
+                            % circle_area = pi * radius^2;
+                            % chain_area = num_particles * circle_area;
+                            % METHOD 2: Calculate area fraction based on bw image
+                            bw_image = obj.get_locations_image(particle_locations, ii);
+                            chain_area = sum(bw_image(:) == 0); % Count the number of black pixels (chains are black)
                             chain_area_frac(end_index) = chain_area / total_area; % Calculate area fraction
                             
                             progress = ii / n_frames;
@@ -1765,7 +1773,6 @@ classdef Voids < handle
             all_data = obj.voids_data.all_data;
             save('F:\shake_table_data\Results\voids_data.mat', 'all_data');
         end
-
         % plot a single polar plot with all the orientations of voids over time
         function plot_total_void_orientation(obj)
             if isempty(obj.voids_data)
@@ -1803,16 +1810,23 @@ classdef Voids < handle
                             continue;
                         end
 
-                        fig = figure(f_num);pax = polaraxes(fig);hold(pax, 'on');
+                        fig = figure(f_num);
+                        if isempty(findall(fig, 'Type', 'polaraxes'))
+                            pax = polaraxes(fig); % create only if not already present
+                        else
+                            pax = findall(fig, 'Type', 'polaraxes');
+                        end
+                        hold(pax, 'on');
                         % theta: your angle data in radians
                         nbins = 18;
-                        [counts, edges] = histcounts(theta, nbins, 'BinLimits', [0 2*pi]);
+                        [counts, edges] = histcounts(theta, nbins, 'BinLimits', [0 2*pi],'normalization', 'probability');
                         bin_centers = (edges(1:end-1) + edges(2:end)) / 2;
 
                         % Close the curve for polarplot
-                        bin_centers = [bin_centers, bin_centers(1)];
-                        counts = [counts, counts(1)];
-
+                        window_size = 3; % Adjust as needed
+                        bin_centers = [bin_centers(end-window_size+1:end), bin_centers, bin_centers(1:window_size)];
+                        counts = [counts(end-window_size+1:end), counts, counts(1:window_size)];
+                        smooth_counts = smoothdata(counts, 'movmean', window_size); % window size 3, adjust as needed
                         % Plot as outline
                         polarplot(pax, bin_centers, counts, 'LineWidth', 2, 'Color', obj.app.utils.get_color(n_num), ...
                             'DisplayName', sprintf('%s %s %s', f, n, iter));
@@ -1830,16 +1844,22 @@ classdef Voids < handle
                 for fs = fieldnames(all_data.(n))'
                     f = fs{1};
                     f_num = str2double(f(2:end)); % Extract frequency number
-                    figure(f_num);ax = gca;hold(ax, 'on');
-                    title(ax, 'Scaler anisotropy Evolution');
+                    fig = figure(f_num);
+                    if isempty(findall(fig, 'Type', 'polaraxes'))
+                        pax = polaraxes(fig); % create only if not already present
+                    else
+                        pax = findall(fig, 'Type', 'polaraxes');
+                    end
+                    hold(pax, 'on');
+                    title(pax, 'Total Orientation');
                     legend_handles = gobjects(1, numel(Ns));
                     for k = 1:numel(Ns)
-                        legend_handles(k) = plot(ax, NaN, NaN, 'LineWidth', 2, ...
+                        legend_handles(k) = polarplot(pax, NaN, NaN, 'LineWidth', 2, ...
                             'Color', obj.app.utils.get_color(Ns(k)), 'DisplayName', legend_labels{k});
                     end
-                    legend(ax, legend_handles, legend_labels, 'Location', 'best');
+                    legend(pax, legend_handles, legend_labels, 'Location', 'northeastoutside');
 
-                    exportgraphics(ax, fullfile(save_dir, sprintf('anisotropy_f%d.png', f_num)));
+                    exportgraphics(pax, fullfile(save_dir, sprintf('orientation_f%d.png', f_num)));
                 end                
             end
         end
@@ -1905,6 +1925,250 @@ classdef Voids < handle
             % save the plot data
             all_data = obj.voids_data.all_data;
             save('F:\shake_table_data\Results\voids_data.mat', 'all_data');
+        end
+
+        % Plot the void with the largest area irrespective of it being enclosed 
+        % by chains or not. Also plot the area of it as time plot.
+        function plot_largest_void_area_vs_time(obj)
+            if isempty(obj.voids_data)
+                obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            end
+            save_dir = fullfile('F:', 'shake_table_data', 'Results', 'largest_void_area');
+            if ~exist(save_dir, 'dir')
+                mkdir(save_dir);
+            end
+            obj.pool_largest_void_area_into_voidData();
+            % Load the pooled voids data from results folder
+            all_data = obj.voids_data.all_data;
+            for ns = fieldnames(all_data)'
+                n = ns{1};
+                if n == "N4"
+                    continue; % skip N4 for now
+                end
+                n_num = str2double(n(2:end)); % Extract stack number
+                for fs = fieldnames(all_data.(n))'
+                    f = fs{1};
+                    f_num = str2double(f(2:end)); % Extract frequency number
+                    for iters = fieldnames(all_data.(n).(f))'
+                        iter = iters{1};
+                        % if iter contains _cont skip it                    
+                        if ~contains(iter, '_largest_void')
+                            continue;
+                        end
+                        iter_num = str2double(iter(5)); % Extract iteration number
+                        data = all_data.(n).(f).(iter);
+                        % assignin('base', 'temp', data); % For debugging
+                        empty = load(sprintf('F://shake_table_data//N%d//%dhz_hopperflow//60deg//10cm//stack_info_%d.mat',n_num,f_num,iter_num), '-mat', 'empty');
+                        if ~empty.empty                  
+                            fprintf('Skipping non empty N%d f%d iter%d\n', n_num, f_num, iter_num);           
+                            continue;
+                        end
+                        fprintf('Processing N%d f%d iter%d\n', n_num, f_num, iter_num);
+
+                        figure(f_num);ax = gca;
+                        hold(ax, 'on');
+                        % Plot void area fraction
+                        % remove all entries from data.index and data.area where data.index is 0
+                        xxx = data.index(data.index ~= 0); % Filter out rows where index is 0
+                        yy = data.area(data.index ~= 0); % Filter out rows where area is 0
+                        xx = xxx - min(xxx); % Normalize index to start from 0
+                        xx = (xx / max(xx)) * 100; % Normalize index
+                        % disp([numel(xx) numel(yy)]);
+                        % smooth data
+                        yy = smoothdata(yy, 'movmean', 3); % Smooth the area data
+                        plot(ax, xx, yy, 'LineWidth', 2, 'Color', obj.app.utils.get_color(n_num), ...
+                            'DisplayName', sprintf('%s %s %s', f, n, iter));
+                        
+                        % Plot the largest void as shape
+                        % boundaries = data.boundary(data.index ~= 0);
+                        % dirc = sprintf('F://shake_table_data//N%d//%dhz_hopperflow//60deg//10cm//',n_num,f_num);
+                        % timestamps = all_data.(n).(f).(sprintf('iter%d',iter_num)).timeStamps;
+                        % figure(100);ax2 = gca;
+                        % savedir = sprintf('%slargest_void_area_iter%d', dirc, iter_num);
+                        % if ~exist(savedir, 'dir')
+                        %     mkdir(savedir);
+                        % end
+
+                        % start_frame_timestamp = obj.app.timer.time_2_sec(timestamps{1});
+                        % % Loop through each boundary and plot it
+                        % for k = 1:length(boundaries)
+                        %     timeStamp = timestamps{k};
+                        %     secs = obj.app.timer.time_2_sec(timeStamp);
+                        %     timestamp_text = sprintf("%.0f Sec", secs-start_frame_timestamp);
+                        %     boundary = boundaries{k};
+                        %     if isempty(boundary)
+                        %         continue; % Skip empty boundaries
+                        %     end
+                        %     % flip the boundary vertically
+                        %     boundary(:,1) = 800 - boundary(:,1); % Flip the boundary vertically
+                        %     plot(ax2, boundary(:,2), boundary(:,1), 'LineWidth', 2, 'Color', 'k');
+                        %     xlim(ax2, [0 800]);
+                        %     ylim(ax2, [0 800]);
+                        %     % add timestamp text
+                        %     % Place the timestamp at the bottom right of the plot
+                        %     xlim_vals = xlim(ax2);
+                        %     ylim_vals = ylim(ax2);
+                        %     x_pos = xlim_vals(2) - 10; % 10 pixels from right
+                        %     y_pos = ylim_vals(1) + 20; % 20 pixels from bottom
+                        %     text(x_pos, y_pos, timestamp_text, ...
+                        %         'HorizontalAlignment', 'right', 'VerticalAlignment', 'bottom', ...
+                        %         'FontSize', 12, 'Color', 'k', 'Parent', ax2);
+                        %     % save plot
+                        %     exportgraphics(ax2, fullfile(savedir, sprintf('largest_void_%d.png', xxx(k))));
+                        %     % break; % break after plotting the first boundary
+                        %     % pause(1); % Pause to visualize the plot
+                        % end
+                    end
+                end
+            end
+            Ns = [12, 24, 48];
+            legend_labels = arrayfun(@(n) sprintf('N = %d', n), Ns, 'UniformOutput', false);
+            for ns = fieldnames(all_data)'
+                n = ns{1};
+                if n == "N4"
+                    continue; % skip N4 for now
+                end
+                for fs = fieldnames(all_data.(n))'
+                    f = fs{1};
+                    f_num = str2double(f(2:end)); % Extract frequency number
+                    figure(f_num);ax = gca;
+                    hold(ax, 'on');
+                    % add upper and right axes to make box
+                    ax.Box = 'on';
+                    ax.XLim = [0 100];
+                    xlabel(ax, 'Percent Completion (%)');
+                    ylabel(ax, 'Largest Void Area (px^2)');
+                    title(ax, 'Largest Void Area Evolution');
+                    legend_handles = gobjects(1, numel(Ns));
+                    for k = 1:numel(Ns)
+                        legend_handles(k) = plot(ax, NaN, NaN, 'LineWidth', 2, ...
+                            'Color', obj.app.utils.get_color(Ns(k)), 'DisplayName', legend_labels{k});
+                    end
+                    legend(ax, legend_handles, legend_labels, 'Location', 'southeast');
+
+                    exportgraphics(ax, fullfile(save_dir, sprintf('Largest_void_f%d.png', f_num)));
+                end                
+            end
+        end
+
+        function pool_largest_void_area_into_voidData(obj)
+            % loop over all the stacks
+            h1 = waitbar(0, 'Processing stacks for largest void area');
+            for i = 30:length(obj.app.stack_paths)
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    % fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+
+                [N, fs] = obj.app.utils.get_info(obj.app.path);
+                [iteration, ~] = obj.app.utils.getIteration(obj.app.path);
+
+                if N == 4 || N == 1
+                    continue; % skip N1, N4 for now
+                end
+
+                tbl = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs));
+                if isfield(tbl, sprintf('iter%s_largest_void', iteration)) && ~obj.app.forced
+                    % disp(['Largest void area data already exists for N = ', num2str(N), ', f = ', num2str(fs), ', iter = ', iteration]);
+                    continue; % largest_void_area already exists
+                else
+                    % obj.app.utils.load_stack_info();
+                    % obj.detect_voids_stack(); % COMMENT OUT WHEN NOT NEEDED
+                    % voids = obj.app.stack_info.voids;
+                    stack_info_path = sprintf('F://shake_table_data//N%d//%dhz_hopperflow//60deg//10cm//stack_info_%s.mat', N, fs, iteration);
+                    voids = load(stack_info_path, '-mat', 'voids');
+                    voids = voids.voids; % Extract the voids from the loaded structure
+                    n_frames = length(voids);
+                    fprintf('Processing %d frames for largest void area evolution\n', n_frames);
+                    largest_void_area = zeros(n_frames, 1);
+                    largest_void_B = cell(n_frames, 1);
+                    largest_void_index = zeros(n_frames, 1);
+                    
+                    h2 = waitbar(0, 'Processing stack for largest void area evolution');
+                    for ii = 1:n_frames
+                        void_data = voids{ii};
+                        if isempty(void_data)
+                            continue;
+                        end
+
+                        % find the largest void and its area
+                        [boundary, area] = obj.find_largest_void(void_data);
+                        largest_void_B{ii} = boundary;
+                        largest_void_area(ii) = area;
+                        largest_void_index(ii) = ii;
+
+                        progress = ii / n_frames;
+                        waitbar(progress, h2);                    
+                    end
+                    close(h2);
+                    obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s_largest_void', iteration)).boundary = largest_void_B;
+                    obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s_largest_void', iteration)).area = largest_void_area;
+                    obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s_largest_void', iteration)).index = largest_void_index;
+                end
+                progress = i / length(obj.app.stack_paths);
+                waitbar(progress, h1);
+            end
+            close(h1);
+            % save the plot data
+            all_data = obj.voids_data.all_data;
+            save('F:\shake_table_data\Results\voids_data.mat', 'all_data');
+        end
+
+        function [boundary, max_void_area] = find_largest_void(~, void_data)
+            max_void_area = -1;
+            % mask = obj.app.stack_info.mask; % Get the mask from stack_info
+            % skipped_boundaries = {};
+            % skipped_counter = 0;
+            num_voids = length(void_data.B);
+            % disp(['Number of voids in frame: ', num2str(num_voids)]);
+            for k = 1:num_voids
+                b = void_data.B{k};
+                % calculate the area of the void
+                void_area = polyarea(b(:,2), b(:,1));
+
+                % % if b covers masked area skip it
+                % rows = round(b(:,1));
+                % cols = round(b(:,2));
+                % % Ensure indices are within image bounds
+                % rows = min(max(rows,1), size(mask,1));
+                % cols = min(max(cols,1), size(mask,2));
+                % % Check if any point in the boundary is in the masked region
+                % if any(mask(sub2ind(size(mask), rows, cols)))
+                %     skipped_counter = skipped_counter + 1;
+                %     fprintf('skipped %d of %d',skipped_counter, num_voids);
+                %     % lies inside the mask, skip it
+                %     % display('Skipping void that lies inside the mask');
+                %     % b(:,2) = 800 - b(:,2);
+                %     % skipped_boundaries{end+1} = b; % Store the skipped boundary
+                %     continue;
+                % end
+                if void_area > max_void_area
+                    boundary = b; % Store the boundary of the largest void
+                    max_void_area = void_area;
+                    % index = k; % Store the index of the largest void
+                    % disp(['Largest void area: ', num2str(max_void_area), ' at index: ', num2str(index)]);
+                end
+            end
+            
+            % obj.draw_boundaries(skipped_boundaries);
+        end
+
+        function create_largest_void_frames_stack(obj)
+            [N, fs] = obj.app.utils.get_info(obj.app.path);
+            [iteration, ~] = obj.app.utils.getIteration(obj.app.path);
+            if isempty(obj.voids_data)
+                obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            end
+            data = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s_largest_void', iteration));
+
+            % get the bw image and overlay the largest void on it
+            particle_locations = obj.app.particle_locator.get_particle_locations(image_idx);
+            bw_image = obj.get_locations_image(particle_locations); % Assuming mask is the binary image
+            largest_void_B = data.boundary;
+            largest_void_index = data.index;
+            
         end
     end
 end
