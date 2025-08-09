@@ -294,6 +294,8 @@ classdef Ui < handle
                 'MenuSelectedFcn', @(src,evt) obj.app.voids.overlay_eigen_vectors());
             uimenu(voidsMenu, 'Text', 'Overlay first and last ploc - Stacks', ...
                 'MenuSelectedFcn', @(src,evt) obj.app.voids.overlay_first_last_particle_locations());
+            uimenu(voidsMenu, 'Text', 'Generate methods images for thesis', ...
+                'MenuSelectedFcn', @(src,evt) obj.app.voids.generate_methods_images());
                 
             voids_area_frac_Menu = uimenu(voidsMenu, 'Text', 'Area Fraction');
             uimenu(voids_area_frac_Menu, 'Text', 'Plot Void area frac. over time - Stacks', ...
@@ -304,6 +306,8 @@ classdef Ui < handle
             'MenuSelectedFcn', @(src,evt) obj.app.voids.plot_chain_and_void_area_fraction_vs_time_averaged());  
             uimenu(voids_area_frac_Menu, 'Text', 'Plot largest void over time', ...
             'MenuSelectedFcn', @(src,evt) obj.app.voids.plot_largest_void_area_vs_time());  
+            uimenu(voids_area_frac_Menu, 'Text', 'Plot largest void over time-avg', ...
+            'MenuSelectedFcn', @(src,evt) obj.app.voids.plot_largest_void_area_vs_time_averaged());  
             
             anisotropyMenu = uimenu(voidsMenu, 'Text', 'Analyze anisotropy');
             uimenu(anisotropyMenu, 'Text', 'Frame', ...
@@ -334,6 +338,8 @@ classdef Ui < handle
                 'MenuSelectedFcn', @(src,evt) obj.app.combine_stacks_callback());
             uimenu(generalMenu, 'Text', 'Change Drive', ...
                 'MenuSelectedFcn', @(src,evt) obj.app.masking.change_drive_callback());
+            uimenu(generalMenu, 'Text', 'Find frame numbers', ...
+                'MenuSelectedFcn', @(src,evt) obj.app.utils.find_frame_numbers());
 
         end
         function add_delete_button(obj, parent, position, callback)

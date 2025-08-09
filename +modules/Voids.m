@@ -7,6 +7,117 @@ classdef Voids < handle
         function obj = Voids(app)
             obj.app = app;
         end
+
+        function generate_methods_images(obj)
+            % given a stack path, generate following images:
+            % 1. first image with particle locations overlaid
+            % 2. BW image of voids with eigenvalues overlaid
+            % 3. Image of LBOOP 
+            stack_number = 94;
+            set(obj.app.ui.controls.stackDropdown, 'Value', stack_number);
+            obj.app.path = obj.app.stack_paths{stack_number};
+            % [N, fs] = obj.app.utils.get_info(obj.app.path);
+            % [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
+            if evalin('base', 'exist(''stack_info'', ''var'')')
+                % if stack_info already exists, load it
+                obj.app.stack_info = evalin('base', 'stack_info');
+            else
+                obj.app.utils.load_stack_info();
+                % assign obj.app.stack_info to base workspace
+                assignin('base', 'stack_info', obj.app.stack_info);
+            end
+
+            image_idx = obj.app.stack_info.start_index;
+            
+            % load the image if it's not already loaded
+            if isempty(obj.app.stack_info.img_data.imgs{image_idx})            
+                % fprintf('Loading image %d as its empty', image_idx);
+                obj.app.stack_info.img_data.imgs{image_idx} = mat2gray(imread(fullfile(obj.app.stack_info.img_data.img_files(image_idx).folder, obj.app.stack_info.img_data.img_files(image_idx).name)));
+            end
+            % if aligned displacements exist, apply them to the image
+            % if obj.app.stack_info.aligned == true
+            %     displaced_img = imtranslate(obj.app.stack_info.img_data.imgs{image_idx}, - obj.app.stack_info.displacements(image_idx, :));
+            %     if isfield(obj.app.stack_info, 'masked') && obj.app.stack_info.masked == true && isfield(obj.app.stack_info, 'mask')
+            %         displaced_img = imoverlay(displaced_img, obj.app.stack_info.mask, 'r');
+            %     end 
+            %     imshow(displaced_img, 'Parent', obj.app.ui.controls.ax2);
+            % else
+            %     imshow(obj.app.stack_info.img_data.imgs{image_idx}, 'Parent', obj.app.ui.controls.ax2);
+            % end
+            % hold(obj.app.ui.controls.ax2, 'on');
+
+            % plot the particle locations on ax2
+            particle_locations = obj.app.particle_locator.get_particle_locations(image_idx);
+            % apply the displacements to the particle locations
+            % particle_locations.x = particle_locations.x - obj.app.stack_info.displacements(image_idx, 1);
+            % particle_locations.y = particle_locations.y - obj.app.stack_info.displacements(image_idx, 2);
+            % plot the particle locations on ax2
+            % plot(obj.app.ui.controls.ax2, particle_locations.x, particle_locations.y, 'yo', 'MarkerFaceColor', 'y', 'MarkerSize', 2);
+        
+            % find the white holes in the image
+            binaryImage = obj.get_locations_image(particle_locations);
+            % imshow(binaryImage, 'Parent', obj.app.ui.controls.ax2);
+            % hold(obj.app.ui.controls.ax2, 'on');
+            % overlay voids and eigenvectors
+            % if isfield(obj.app.stack_info, 'voids') && ~isempty(obj.app.stack_info.voids{image_idx})
+            %     void_data = obj.app.stack_info.voids{image_idx};
+            %     % clean up the void data
+            %     void_data = obj.clean_void_data(void_data, size(binaryImage, 1), size(binaryImage, 2));
+            %     obj.overlay_boundaries(void_data.B);
+            % end
+            
+            data = obj.app.stack_info.voids{image_idx};
+            data = obj.clean_void_data(data, size(binaryImage, 1), size(binaryImage, 2));
+            B = data.B;
+            N = length(B);
+            cla(obj.app.ui.controls.ax2);
+            % Show the binary image
+            imshow(binaryImage, 'Parent', obj.app.ui.controls.ax2);
+            obj.overlay_boundaries(B);
+            hold(obj.app.ui.controls.ax2, 'on');
+
+            % Loop through each void
+            for k = 1:N
+                boundary = B{k};
+                x = boundary(:, 2); % columns
+                y = boundary(:, 1); % rows
+
+                % Compute centroid
+                x_mean = mean(x);
+                y_mean = mean(y);
+
+                % Centered coordinates
+                x_centered = x - x_mean;
+                y_centered = y - y_mean;
+                coords = [x_centered, y_centered];
+
+                % Covariance and eigen decomposition
+                C = cov(coords);
+                [V, D] = eig(C);
+                
+                % Sort eigenvalues and vectors
+                [~, idx] = sort(diag(D), 'descend');
+                V = V(:, idx);
+                
+                % Scale eigenvectors for visualization
+                scale = 10; % adjust this for visibility
+                v1 = V(:,1) * scale; % major axis
+                v2 = V(:,2) * scale; % minor axis
+
+                % Plot major and minor axis as arrows
+                quiver(x_mean, y_mean, v1(1), v1(2), 0, 'r', 'LineWidth', 2, 'MaxHeadSize', 2,'DisplayName', 'None');
+                quiver(x_mean, y_mean, -v1(1), -v1(2), 0, 'r', 'LineWidth', 2, 'MaxHeadSize', 2,'DisplayName', 'None'); % opposite direction
+
+                quiver(x_mean, y_mean, v2(1), v2(2), 0, 'b', 'LineWidth', 2, 'MaxHeadSize', 2,'DisplayName', 'None');
+                quiver(x_mean, y_mean, -v2(1), -v2(2), 0, 'b', 'LineWidth', 2, 'MaxHeadSize', 2,'DisplayName', 'None'); % opposite direction
+
+                % Optionally, mark the centroid
+                plot(x_mean, y_mean, 'go', 'MarkerSize', 5, 'LineWidth', 2,'DisplayName', 'None');
+            end
+
+            hold(obj.app.ui.controls.ax2, 'off');
+        end
+
         function detect_voids_all_stacks(obj)
             % Create a progress bar
             h = waitbar(0, 'Processing stacks');
@@ -142,7 +253,7 @@ classdef Voids < handle
             img_width = 800;  % Replace with the actual width of your image
             bw_img = ones(img_height, img_width); % Initialize a blank binary image
             % Define the radius of the circles
-            radius = 5; % Adjust the radius as needed
+            radius = 4; % Adjust the radius as needed
             
             % Create a grid for the image
             [X, Y] = meshgrid(1:img_width, 1:img_height);
@@ -1008,8 +1119,9 @@ classdef Voids < handle
                 chain_area = sum(bw_image(:) == 0);%1-white,0-black
                 chain_area_frac(end_index) = chain_area / total_area; % Calculate area fraction
                 plot(ax3, normalized_x(1:end_index), chain_area_frac(1:end_index), 'Color', [0.2 0.6 0.8], 'LineWidth', 2);
+                ax3.Box = 'on';
                 ax3.XLim = [0 100];
-                title(ax3, 'Chains Area Fraction Evolution');
+                % title(ax3, 'Chains Area Fraction Evolution');
                 ax3.XLabel.String = 'Percent Completion (%)';
                 ax3.YLabel.String = 'Chains Area Fraction';
 
@@ -1324,9 +1436,8 @@ classdef Voids < handle
                     f_num = str2double(f(2:end)); % Extract frequency number
                     for iters = fieldnames(all_data.(n).(f))'
                         iter = iters{1};
-                        % if iter contains _cont skip it
-                        if contains(iter, '_cont')
-                            continue;
+                        if contains(iter, '_orientation') || contains(iter, '_largest') || contains(iter, '_cont')
+                            continue; % Skip continuation iterations
                         end
                         iter_num = str2double(iter(5:end)); % Extract iteration number
                         data = all_data.(n).(f).(iter);
@@ -1363,10 +1474,11 @@ classdef Voids < handle
 
                     figure(f_num+21);ax2 = gca;hold(ax2, 'on');                     
 
-                    title(ax, 'Void Area Fraction Evolution');
+                    % title(ax, 'Void Area Fraction Evolution');
                     ax.XLabel.String = 'Percent Completion (%)';
                     ax.YLabel.String = 'Void Area Fraction';
                     ax.XLim = [0 100];
+                    ax.Box = 'on';
                     % ax.YLim = [0 0.4];
                     legend_handles = gobjects(1, numel(Ns));
                     for k = 1:numel(Ns)
@@ -1375,10 +1487,11 @@ classdef Voids < handle
                     end
                     legend(ax, legend_handles, legend_labels, 'Location', 'best');
 
-                    title(ax2, 'Chains Area Fraction Evolution');
+                    % title(ax2, 'Chains Area Fraction Evolution');
                     ax2.XLabel.String = 'Percent Completion (%)';
                     ax2.YLabel.String = 'Chains Area Fraction';
                     ax2.XLim = [0 100];
+                    ax.Box = 'on';
                     % ax2.YLim = [0 1];
                     legend_handles2 = gobjects(1, numel(Ns));
                     for k = 1:numel(Ns)
@@ -1439,6 +1552,15 @@ classdef Voids < handle
                     chain_mat = [];
                     for it = 1:numel(iters)
                         iter = iters{it};
+                        if contains(iter, '_orientation') || contains(iter, '_largest')
+                            continue; % Skip continuation iterations
+                        end
+                        iter_val = str2double(iter(5)); % Extract iteration number
+                        empty = load(sprintf('F://shake_table_data//N%d//%dhz_hopperflow//60deg//10cm//stack_info_%d.mat',N_val,f_val,iter_val), '-mat', 'empty');
+                        if ~empty.empty                  
+                            fprintf('Skipping %s\n', obj.app.path);           
+                            continue;
+                        end
                         data = all_data.(n_field).(f_field).(iter);
                         col_names = data.Properties.VariableNames;
                         % Interpolate to common xq
@@ -1469,29 +1591,31 @@ classdef Voids < handle
                         'DisplayName', sprintf('N = %d', N_val));
                     % add errorbars with handlevisibility off linestyle 'none' and marker 'none'
                     errorbar(xq(indxs), void_mean(indxs), void_std(indxs), 'LineStyle', 'none', 'Marker', 'none', ...
-                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off', 'LineWidth', 2);
+                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off'); %, 'LineWidth', 2
+                    ax.Box = 'on';
                     xlabel('Percent Completion (%)');
                     ylabel('Void Area Fraction');
                     title(sprintf('Void Area Fraction (Averaged) for f = %d', f_val));
                     legend('show');
                     hold(ax, 'off');
-                    exportgraphics(ax, fullfile(save_dir, sprintf('void_area_fraction_avg_N%d_f%d.png', N_val, f_val)));
+                    exportgraphics(ax, fullfile(save_dir, sprintf('void_area_fraction_avg_f%d.png', f_val)));
 
                     figure(200+f_val);
                     ax2 = gca; hold(ax2, 'on');
                     % fill([xq fliplr(xq)], [chain_mean+chain_std fliplr(chain_mean-chain_std)], ...
                     %     obj.app.utils.get_color(N_val), 'FaceAlpha', 0.2, 'EdgeColor', 'none');
                     plot(xq, chain_mean, 'LineWidth', 2, 'Color', obj.app.utils.get_color(N_val), ...
-                        'DisplayName', sprintf('N = %d', N_val));
+                        'DisplayName', sprintf('N = %d', N_val));                    
                     % add errorbars with handlevisibility off linestyle 'none' and marker 'none'
                     errorbar(xq(indxs), chain_mean(indxs), chain_std(indxs), 'LineStyle', 'none', 'Marker', 'none', ...
                         'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off');
+                    ax2.Box = 'on';
                     xlabel('Percent Completion (%)');
                     ylabel('Chain Area Fraction');
                     title(sprintf('Chain Area Fraction (Averaged) for f = %d', f_val));
                     legend('show');
                     hold(ax2, 'off');
-                    exportgraphics(ax2, fullfile(save_dir, sprintf('chain_area_fraction_avg_N%d_f%d.png', N_val, f_val)));
+                    exportgraphics(ax2, fullfile(save_dir, sprintf('chain_area_fraction_avg_f%d.png', f_val)));
                 end
             end
         end
@@ -1613,6 +1737,15 @@ classdef Voids < handle
                     norm_mat = [];
                     for it = 1:numel(iters)
                         iter = iters{it};
+                        if contains(iter, '_orientation') || contains(iter, '_largest') 
+                            continue; % Skip continuation iterations
+                        end
+                        iter_val = str2double(iter(5)); % Extract iteration number
+                        empty = load(sprintf('F://shake_table_data//N%d//%dhz_hopperflow//60deg//10cm//stack_info_%d.mat',N_val,f_val,iter_val), '-mat', 'empty');
+                        if ~empty.empty                  
+                            fprintf('Skipping %s\n', obj.app.path);           
+                            continue;
+                        end
                         data = all_data.(n_field).(f_field).(iter);
                         col_names = data.Properties.VariableNames;
                         % Check for required fields
@@ -1639,7 +1772,7 @@ classdef Voids < handle
                         'DisplayName', sprintf('N = %d', N_val));
                     % add errorbars with handlevisibility off linestyle 'none' and marker 'none'
                     errorbar(xq(indxs), norm_mean(indxs), norm_std(indxs), 'LineStyle', 'none', 'Marker', 'none', ...
-                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off','LineWidth', 2);
+                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off');%, 'LineWidth', 2
                     ax.Box = 'on';
                     ax.XLim = [0 100];
                     xlabel('Percent Completion (%)');
@@ -1739,12 +1872,12 @@ classdef Voids < handle
                 [iteration, ~] = obj.app.utils.getIteration(obj.app.path);
 
                 tbl = obj.voids_data.all_data.(sprintf('N%d', N)).(sprintf('f%d', fs)).(sprintf('iter%s', iteration));
-                if ismember('anisotropy_norm', tbl.Properties.VariableNames)
+                if ismember('anisotropy_norm', tbl.Properties.VariableNames) && ~obj.app.forced
                     continue; % chain_area_frac already exists
                 else
                     obj.app.utils.load_stack_info();
-                    n_frames = length(obj.app.stack_info.voids);
                     voids = obj.app.stack_info.voids;
+                    n_frames = length(voids);
                     fprintf('Processing %d frames for anisotropy_and_angle_evolution\n', n_frames);
 
                     anisotropy_norm = [];
@@ -2048,6 +2181,105 @@ classdef Voids < handle
 
                     exportgraphics(ax, fullfile(save_dir, sprintf('Largest_void_f%d.png', f_num)));
                 end                
+            end
+        end
+        function plot_largest_void_area_vs_time_averaged(obj)
+            if isempty(obj.voids_data)
+                obj.voids_data = load('F:\shake_table_data\Results\voids_data.mat');
+            end
+            save_dir = fullfile('F:', 'shake_table_data', 'Results', 'largest_void_area', 'averaged');
+            if ~exist(save_dir, 'dir')
+                mkdir(save_dir);
+            end
+            all_data = obj.voids_data.all_data;
+            Ns = [12, 24, 48];
+            freq_list = [];
+            % Find all unique frequencies
+            for ns = fieldnames(all_data)'
+                n = ns{1};
+                for fs = fieldnames(all_data.(n))'
+                    f = fs{1};
+                    f_num = str2double(f(2:end));
+                    freq_list = [freq_list, f_num];
+                end
+            end
+            unique_fs = unique(freq_list);
+
+            % Common x-axis for interpolation
+            xq = 0:1:100;
+
+            for n_idx = 1:numel(Ns)
+                N_val = Ns(n_idx);
+                n_field = sprintf('N%d', N_val);
+                if ~isfield(all_data, n_field)
+                    fprintf('No data for N = %d\n', N_val);
+                    continue;
+                end
+                for f_idx = 1:numel(unique_fs)
+                    f_val = unique_fs(f_idx);
+                    f_field = sprintf('f%d', f_val);
+                    if ~isfield(all_data.(n_field), f_field)
+                        fprintf('No data for frequency %d in N = %d\n', f_val, N_val);
+                        continue;
+                    end
+                    % Gather all iterations for this (N, f)
+                    iters = fieldnames(all_data.(n_field).(f_field));
+                    area_mat = [];
+                    for it = 1:numel(iters)
+                        iter = iters{it};
+                        if ~contains(iter, '_largest') 
+                            continue; % Skip continuation iterations
+                        end
+                        iter_val = str2double(iter(5)); % Extract iteration number
+                        empty = load(sprintf('F://shake_table_data//N%d//%dhz_hopperflow//60deg//10cm//stack_info_%d.mat',N_val,f_val,iter_val), '-mat', 'empty');
+                        if ~empty.empty                  
+                            fprintf('Skipping not empty N = %d, f = %d, iter = %d\n', N_val, f_val, iter_val);           
+                            continue;
+                        end
+                        data = all_data.(n_field).(f_field).(iter);
+                        col_names = fieldnames(data);
+                        % Check for required fields
+                        if ismember('index', col_names) && ismember('area', col_names)
+                            xxx = data.index(data.index ~= 0); % Filter out rows where index is 0
+                            yy = data.area(data.index ~= 0); % Filter out rows where area is 0
+                            xx = xxx - min(xxx); % Normalize index to start from 0
+                            xx = (xx / max(xx)) * 100; % Normalize index
+                            % disp([numel(xx) numel(yy)]);
+                            % smooth data
+                            yy = smoothdata(yy, 'movmean', 3); % Smooth the area data
+                            y_area = interp1(xx, yy, xq, 'linear', 'extrap');
+                            area_mat = [area_mat; y_area];
+                        end
+                    end
+                    if isempty(area_mat)
+                        fprintf('No valid largest void area data for N = %d, f = %d\n', N_val, f_val);
+                        continue;
+                    end
+                    % Compute mean and std
+                    area_mean = mean(area_mat, 1, 'omitnan');
+                    area_std = std(area_mat, 0, 1, 'omitnan');
+                    % Plot
+                    figure(f_val);
+                    ax = gca; hold(ax, 'on');
+                    indxs = 1:4:100;
+                    % fill([xq fliplr(xq)], [area_mean+area_std fliplr(area_mean-area_std)], ...
+                    %     obj.app.utils.get_color(N_val), 'FaceAlpha', 0.2
+                    %     , 'EdgeColor', 'none');
+                    plot(xq, area_mean, 'LineWidth', 2, 'Color', obj.app.utils.get_color(N_val), ...
+                        'DisplayName', sprintf('N = %d', N_val));
+                    % add errorbars with handlevisibility off linestyle 'none' and marker 'none'
+                    errorbar(xq(indxs), area_mean(indxs), area_std(indxs), ...
+                        'LineStyle', 'none', 'Marker', 'none', ...
+                        'Color', obj.app.utils.get_color(N_val), 'HandleVisibility', 'off');%, 'LineWidth', 2
+                    ax.Box = 'on';
+                    ax.XLim = [0 100];
+                    xlabel('Percent Completion (%)');
+                    ylabel('Largest Void Area (px^2)');
+                    title(sprintf('Largest Void Area (Averaged) for f = %d', f_val));
+                    legend('show');
+                    hold(ax, 'off');
+                    exportgraphics(ax, fullfile(save_dir, sprintf('largest_void_area_f%d.png', f_val)));
+                end
             end
         end
 

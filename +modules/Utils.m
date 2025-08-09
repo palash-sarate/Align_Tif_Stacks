@@ -453,6 +453,47 @@ classdef Utils < handle
             uicontrol('Style', 'listbox', 'Parent', log_fig, 'Units', 'normalized', ...
                         'Position', [0 0 1 1], 'String', obj.app.logs, 'FontSize', 12);
         end
+        
+        % function to get frame number for each percent completion
+        function find_frame_numbers(obj)
+            h1 = waitbar(0, 'Getting frame numbers');
+            for i = 1:length(obj.app.stack_paths)%31,32
+                % disp(i);
+                set(obj.app.ui.controls.stackDropdown, 'Value', i);
+                obj.app.path = obj.app.stack_paths{i};
+                % [N, fs] = obj.app.utils.get_info(obj.app.path);
+                [iteration, parentDir] = obj.app.utils.getIteration(obj.app.path);
+                if contains(obj.app.path, 'time_control') || contains(obj.app.path, 'temp')
+                    fprintf('Skipping %s\n', obj.app.path);           
+                    continue;
+                end
+                empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+                if ~isfield(empty, 'empty')
+                    obj.app.trial.set_stack_empty_or_not();
+                    empty = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'empty');
+                end
+                
+                if ~empty.empty
+                    fprintf('Skipping as empty %s\n', obj.app.path);
+                    continue;
+                end
+                
+                end_index = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'end_index');
+                start_index = load(sprintf('%s//stack_info_%s.mat', parentDir, iteration), '-mat', 'start_index');
+
+                fprintf('End index: %d\n', end_index);
+                fprintf('Start index: %d\n', start_index);
+
+                assignin('base', 'end_index', end_index);
+                assignin('base', 'start_index', start_index);
+                
+                progress = i / length(obj.app.stack_paths);
+                waitbar(progress, h1);
+                break;
+            end
+            close(h1);
+        end
+        
         % function all_distances = calculate_all_distances(locations)
         %     x_gpu = gpuArray(locations.x);
         %     y_gpu = gpuArray(locations.y);

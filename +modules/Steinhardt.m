@@ -449,7 +449,7 @@ classdef Steinhardt < handle
                 return;
             end
 
-            for i = 1:1:length(obj.app.stack_paths)
+            for i = 94%1:1:length(obj.app.stack_paths)
                 obj.app.path = obj.app.stack_paths{i};
                 % set the current stack in the dropdown
                 set(obj.app.ui.controls.stackDropdown, 'Value', i);
@@ -499,6 +499,8 @@ classdef Steinhardt < handle
                 % save the plot to the stack folder
                 [iter, parentDir] = obj.app.utils.getIteration(obj.app.path);
                 exportgraphics(obj.app.ui.controls.ax2, fullfile(parentDir, sprintf('LBOOP_%s.png', iter)));
+                % save as eps
+                exportgraphics(obj.app.ui.controls.ax2, fullfile(parentDir, sprintf('LBOOP_%s.eps', iter)), 'ContentType', 'vector');
             end
         end
     end

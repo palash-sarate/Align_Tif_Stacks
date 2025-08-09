@@ -151,3 +151,42 @@ if ~isempty(anisotropy_norm)
     title('Anisotropy Norm Evolution');
     xlim([1 n_frames]);
 end
+            % directory of the tif stacks
+            % folder = 'F:\shake_table_data\';
+            % populate the list of paths to the tiff stacks
+            Ns = [4,12,24,48];
+            fs = [4,6,8,10,12,14,16,18,20];
+            deg = 60;
+            wd = 10;
+            stack_paths = [];
+            % fps = 47;
+
+            for n = 1:length(Ns)
+                for freq = 1:length(fs)
+                    for w = 1:length(wd)
+                        % Construct the path with escaped backslashes
+                        c_path = sprintf("F:\\shake_table_data\\N%d\\%dhz_hopperflow\\%ddeg\\%dcm\\",Ns(n),fs(freq),deg,wd);
+                        % find folders in the path directory
+                        subFolders = dir(c_path);
+                        subFolders = subFolders([subFolders.isdir]);  % Keep only directories
+                        % remove directories that have voids_images in them
+                        subFolders = subFolders(~contains({subFolders.name}, 'voids_images'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~contains({subFolders.name}, 'anisotropy_angle_frames'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~contains({subFolders.name}, 'void_orientation'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~contains({subFolders.name}, 'voids_results'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~contains({subFolders.name}, 'anisotropy_hist'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~contains({subFolders.name}, 'area_fractions'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~contains({subFolders.name}, 'largest_void_area'));  % Remove directories that contain 'voids_images'
+                        subFolders = subFolders(~ismember({subFolders.name}, {'.', '..'}));  % Remove '.' and '..' directories
+
+                        for k = 1:length(subFolders)
+                            stack_paths = [stack_paths; fullfile(c_path, subFolders(k).name)];
+                        end
+                    end
+                end
+            end
+
+            stack_paths = [stack_paths; "F:\shake_table_data\time_control\\1"];
+            stack_paths = [stack_paths; "F:\shake_table_data\time_control\\2"];
+            stack_paths = [stack_paths; "F:\shake_table_data\time_control\\3"];
+        end

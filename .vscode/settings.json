@@ -97,6 +97,7 @@
         "strrep",
         "structfun",
         "tobytes",
+        "trackpy",
         "uiaxes",
         "uicontrol",
         "uifigure",
